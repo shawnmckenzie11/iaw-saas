@@ -1,0 +1,174 @@
+// Prisma representation of the Delivery Record Schema
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum DeliveryStatus {
+  DRAFT
+  PICKED_UP
+  DELIVERED
+  INVOICED
+  POSTED_TO_QBO
+  FAILED_POSTING
+  VOIDED
+}
+
+enum VehicleType {
+  CAR
+  MINIVAN
+  TRUCK
+  CARGO_VAN
+  OTHER
+}
+
+enum PriorityLevel {
+  REGULAR
+  RUSH
+}
+
+enum SyncStatus {
+  PENDING
+  SYNCED
+  CONFLICT
+}
+
+enum QboSyncStatus {
+  NOT_SYNCED
+  SYNCED
+  FAILED
+}
+
+enum PricingTier {
+  TIER_1 // Common routes (Jannatec, Redpath, Mobile, Bull, Sandvik, Wajax, Bus, Komatsu)
+  TIER_2 // In-town standard ($60 flat, dispatcher adjustable)
+  TIER_3 // Out of town (manual dispatcher entry)
+}
+
+model Customer {
+  id              String           @id @default(uuid()) @db.Uuid
+  qboCustomerId   String?          @unique @map("qbo_customer_id")
+  name            String // PII
+  email           String? // PII
+  phone           String? // PII
+  billingAddress  String?          @map("billing_address") // PII
+  isActive        Boolean          @default(true) @map("is_active")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  deliveryRecords DeliveryRecord[]
+
+  @@map("customers")
+}
+
+model Driver {
+  id              String           @id @default(uuid()) @db.Uuid
+  firstName       String           @map("first_name") // PII
+  lastName        String           @map("last_name") // PII
+  phone           String? // PII
+  isActive        Boolean          @default(true) @map("is_active")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  deliveryRecords DeliveryRecord[]
+
+  @@map("drivers")
+}
+
+model DeliveryRecord {
+  // Identifiers
+  id             String         @id @default(uuid()) @db.Uuid
+  clientSideUuid String         @unique @map("client_side_uuid") @db.Uuid
+  waybillNumber  String         @unique @map("waybill_number")
+  
+  // Status & Sync
+  status         DeliveryStatus @default(DRAFT)
+  syncStatus     SyncStatus     @default(PENDING) @map("sync_status")
+  syncError      String?        @map("sync_error")
+
+  // Relationships
+  customer       Customer?      @relation(fields: [customerId], references: [id])
+  customerId     String?        @map("customer_id") @db.Uuid
+  qboCustomerId  String?        @map("qbo_customer_id")
+  
+  driver         Driver?        @relation(fields: [driverId], references: [id])
+  driverId       String?        @map("driver_id") @db.Uuid
+  vehicleType    VehicleType    @default(CAR) @map("vehicle_type")
+
+  // Parcel / Cargo Details
+  parcelDescription String      @map("parcel_description")
+  parcelQuantity    Int         @default(1) @map("parcel_quantity")
+  parcelWeightLbs   Decimal?    @map("parcel_weight_lbs") @db.Decimal(6, 2)
+  parcelWeightClass String?     @map("parcel_weight_class") // e.g. "Less than 10 lbs"
+  parcelDimensions  String?     @map("parcel_dimensions_inch") // e.g. "12x12x12"
+
+  // Pickup Details
+  pickupLocationName String     @map("pickup_location_name")
+  pickupAddress      String     @map("pickup_address") // PII
+  pickupContactName  String?    @map("pickup_contact_name") // PII
+  pickupContactPhone String?    @map("pickup_contact_phone") // PII
+  pickupLatitude     Decimal?   @map("pickup_latitude") @db.Decimal(9, 6)
+  pickupLongitude    Decimal?   @map("pickup_longitude") @db.Decimal(9, 6)
+
+  // Dropoff Details
+  dropoffDestinationName String @map("dropoff_destination_name")
+  dropoffAddress         String @map("dropoff_address") // PII
+  dropoffContactName     String? @map("dropoff_contact_name") // PII
+  dropoffContactPhone    String? @map("dropoff_contact_phone") // PII
+  dropoffLatitude        Decimal? @map("dropoff_latitude") @db.Decimal(9, 6)
+  dropoffLongitude       Decimal? @map("dropoff_longitude") @db.Decimal(9, 6)
+
+  // Logistics & Comments
+  priority             PriorityLevel @default(REGULAR)
+  businessOrResidential String?       @map("business_or_residential")
+  additionalComments    String?       @map("additional_comments")
+  requestedPickupTime   DateTime?     @map("requested_pickup_time")
+
+  // Timestamps
+  createdAt           DateTime  @default(now()) @map("created_at")
+  capturedAt          DateTime  @map("captured_at")
+  signedAt            DateTime? @map("signed_at")
+  deliveredAt         DateTime? @map("delivered_at")
+  syncedAt            DateTime? @map("synced_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  // Electronic Signature
+  signatureName         String?   @map("signature_name") // PII
+  signatureImageUrl     String?   @map("signature_image_url")
+  signatureHash         String?   @map("signature_hash")
+  signatureConsentText  String?   @map("signature_consent_text")
+  signatureIpAddress    String?   @map("signature_ip_address")
+  signatureGpsLatitude  Decimal?  @map("signature_gps_latitude") @db.Decimal(9, 6)
+  signatureGpsLongitude Decimal?  @map("signature_gps_longitude") @db.Decimal(9, 6)
+  
+  // Attachments
+  proofPhotoUrl       String?   @map("proof_photo_url")
+
+  // Cost Inputs & Financials
+  pricingTier                PricingTier @default(TIER_2) @map("pricing_tier")
+  pricingIsManuallyAdjusted  Boolean     @default(false) @map("pricing_is_manually_adjusted")
+  pricingOverrideReason      String?     @map("pricing_override_reason")
+  pricingBaseRate            Decimal     @default(0.00) @map("pricing_base_rate") @db.Decimal(10, 2)
+  pricingDistanceMiles       Decimal     @default(0.00) @map("pricing_distance_miles") @db.Decimal(8, 2)
+  pricingDistanceRate        Decimal     @default(0.00) @map("pricing_distance_rate") @db.Decimal(6, 2)
+  pricingFuelSurcharge       Decimal     @default(0.00) @map("pricing_fuel_surcharge") @db.Decimal(8, 2)
+  pricingPrioritySurcharge    Decimal     @default(0.00) @map("pricing_priority_surcharge") @db.Decimal(8, 2)
+  pricingAfterHoursSurcharge  Decimal     @default(0.00) @map("pricing_after_hours_surcharge") @db.Decimal(8, 2)
+  pricingExtraWeightSurcharge Decimal     @default(0.00) @map("pricing_extra_weight_surcharge") @db.Decimal(8, 2)
+  pricingTotalCost           Decimal     @default(0.00) @map("pricing_total_cost") @db.Decimal(10, 2) // Mutable
+  
+  // QuickBooks Online mapping
+  qboSyncStatus     QboSyncStatus @default(NOT_SYNCED) @map("qbo_sync_status")
+  qboInvoiceId      String?       @unique @map("qbo_invoice_id")
+  qboJournalEntryId String?       @unique @map("qbo_journal_entry_id")
+  qboSyncError      String?       @map("qbo_sync_error")
+  qboPostedAt       DateTime?     @map("qbo_posted_at")
+
+  @@index([clientSideUuid])
+  @@index([waybillNumber])
+  @@index([status])
+  @@map("delivery_records")
+}
