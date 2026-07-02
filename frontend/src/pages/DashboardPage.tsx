@@ -951,7 +951,13 @@ export default function DashboardPage({
           ) : isDispatcher ? (
             <span className="dispatch-title">⚙️ Dispatch <span className="build-stamp">{APP_BUILD}</span></span>
           ) : (
-            <span className="driver-title">Driver Portal <span className="build-stamp">{APP_BUILD}</span></span>
+            <span className="driver-title">
+              Driver Portal
+              {session.displayName ? (
+                <span className="driver-header-name"> — {session.displayName}</span>
+              ) : null}{' '}
+              <span className="build-stamp">{APP_BUILD}</span>
+            </span>
           )}
         </div>
 

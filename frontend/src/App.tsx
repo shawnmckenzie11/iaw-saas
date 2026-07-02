@@ -7,6 +7,7 @@ import AccountingPage from './pages/AccountingPage';
 import PwaUpdateBanner from './components/PwaUpdateBanner';
 import { APP_BUILD, ensureFreshAppBuildCache } from './config/appBuild';
 import { hydrateLocationSuggestions } from './data/locationSuggestions';
+import { fetchDriverLogins } from './services/driverLogins';
 import {
   authenticateUser,
   clearSession,
@@ -39,7 +40,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    void hydrateLocationSuggestions().finally(() => setLocationReady(true));
+    void Promise.all([hydrateLocationSuggestions(), fetchDriverLogins()]).finally(() =>
+      setLocationReady(true)
+    );
   }, []);
 
   useEffect(() => {

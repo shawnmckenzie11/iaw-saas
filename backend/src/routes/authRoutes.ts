@@ -3,6 +3,10 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../config/db';
 import { signToken, revokedTokens, requireAuth, requireRole } from '../middleware/auth';
 import { hashPin, isValidPinFormat } from '../utils/pinHash';
+import {
+  assignUniqueDriverLoginUsernames,
+  driverIdForLoginUsername,
+} from '../utils/driverLoginUsername';
 
 const router = Router();
 
@@ -12,13 +16,42 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const failedAttempts = new Map<string, { count: number; lockedUntil: number }>();
 
 /**
+ * Loads active driver display names (payroll employee names when linked).
+ */
+async function loadActiveDriverNames() {
+  const drivers = await prisma.driver.findMany({
+    where: { isActive: true },
+    orderBy: { id: 'asc' },
+  });
+  const employees = await prisma.employee.findMany({
+    where: {
+      driverId: { in: drivers.map((d) => d.id) },
+      role: 'DRIVER',
+      isActive: true,
+    },
+  });
+  const employeeByDriverId = new Map(
+    employees.filter((e) => e.driverId).map((e) => [e.driverId as string, e])
+  );
+
+  return drivers.map((driver) => {
+    const employee = employeeByDriverId.get(driver.id);
+    return {
+      id: driver.id,
+      firstName: employee?.firstName ?? driver.firstName,
+      lastName: employee?.lastName ?? driver.lastName,
+    };
+  });
+}
+
+/**
  * Driver login handler.
  */
 const handleDriverLogin = async (req: Request, res: Response) => {
-  const { pin, driverId } = req.body;
+  const { pin, driverId, loginUsername } = req.body;
 
   const ipKey = req.ip || 'unknown-ip';
-  const targetKey = driverId || ipKey;
+  const targetKey = driverId || loginUsername || ipKey;
 
   const attempt = failedAttempts.get(targetKey);
   if (attempt && attempt.lockedUntil > Date.now()) {
@@ -31,12 +64,23 @@ const handleDriverLogin = async (req: Request, res: Response) => {
     return;
   }
 
+  let expectedDriverId: string | undefined = driverId;
+  if (loginUsername) {
+    const names = await loadActiveDriverNames();
+    const idToUsername = assignUniqueDriverLoginUsernames(names);
+    expectedDriverId = driverIdForLoginUsername(String(loginUsername), idToUsername);
+    if (!expectedDriverId) {
+      res.status(401).json({ error: 'Invalid PIN' });
+      return;
+    }
+  }
+
   const pinHash = hashPin(pin);
   const driver = await prisma.driver.findFirst({
     where: { pinHash, isActive: true },
   });
 
-  if (!driver || (driverId && driver.id !== driverId)) {
+  if (!driver || (expectedDriverId && driver.id !== expectedDriverId)) {
     const count = (attempt ? attempt.count : 0) + 1;
     let lockedUntil = 0;
     if (count >= 5) {
@@ -97,6 +141,20 @@ const handleDispatcherLogin = async (req: Request, res: Response) => {
 };
 
 // Map both paths to the handlers
+router.get('/driver-logins', async (_req: Request, res: Response) => {
+  const names = await loadActiveDriverNames();
+  const idToUsername = assignUniqueDriverLoginUsernames(names);
+
+  res.json(
+    names.map((row) => ({
+      id: row.id,
+      firstName: row.firstName,
+      lastName: row.lastName,
+      loginUsername: idToUsername.get(row.id) ?? '',
+    }))
+  );
+});
+
 router.post('/driver/login', handleDriverLogin);
 router.post('/login/driver', handleDriverLogin);
 

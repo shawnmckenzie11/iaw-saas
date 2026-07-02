@@ -560,6 +560,12 @@ body {
   margin-left: 8px;
 }
 
+.driver-header-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
 .form-intake-badge {
   display: inline-block;
   margin-top: 4px;

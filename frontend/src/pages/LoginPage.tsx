@@ -73,6 +73,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               onChange={(e) => setUsername(e.target.value)}
               autoCapitalize="none"
               autoCorrect="off"
+              placeholder="e.g. driver.o"
             />
             <label>4-Digit PIN</label>
             <input

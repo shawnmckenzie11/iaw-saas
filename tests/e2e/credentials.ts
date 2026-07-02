@@ -1,4 +1,10 @@
 import type { APIRequestContext, Page } from '@playwright/test';
+import { buildDriverLoginUsername } from '../../frontend/src/utils/driverLoginUsername';
+
+/**
+ * Default seeded driver one login username (Driver One → driver.o).
+ */
+export const DRIVER_ONE_LOGIN_USERNAME = buildDriverLoginUsername('Driver', 'One');
 
 /**
  * E2E credentials sourced from environment variables (see `.env.test.example`).
@@ -83,7 +89,7 @@ export async function getDispatcherToken(request: APIRequestContext): Promise<st
  */
 export async function loginDriverViaUi(
   page: Page,
-  username = 'driver1',
+  username = DRIVER_ONE_LOGIN_USERNAME,
   pin = e2eCredentials.driver1Pin
 ): Promise<void> {
   await page.goto('/');

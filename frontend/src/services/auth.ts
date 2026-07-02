@@ -1,3 +1,8 @@
+import {
+  driverDisplayNameForId,
+  resolveDriverIdFromLogin,
+} from './driverLogins';
+
 export type UserRole = 'DRIVER' | 'DISPATCHER';
 
 export interface AuthSession {
@@ -5,18 +10,12 @@ export interface AuthSession {
   role: UserRole;
   driverId?: string;
   username: string;
+  /** Driver first + last name for portal header display. */
+  displayName?: string;
 }
 
 const SESSION_KEY = 'iaw_auth_session';
 const SESSION_COOKIE = 'iaw_auth_session';
-
-/** Maps UI driver usernames to expected driver IDs for session labeling. */
-const DRIVER_USERNAME_MAP: Record<string, string> = {
-  driver1: 'drv-01',
-  driver2: 'drv-02',
-  driver3: 'drv-03',
-  driver4: 'drv-04',
-};
 
 /**
  * Reads a cookie value by name.
@@ -54,30 +53,37 @@ function decodeJwtPayload(token: string): { role?: UserRole; driverId?: string }
 }
 
 /**
- * Authenticates a driver via 4-digit PIN against the backend API.
+ * Authenticates a driver via login username + 4-digit PIN against the backend API.
  */
 async function loginDriver(username: string, pin: string): Promise<AuthSession | null> {
+  const normalized = username.trim().toLowerCase();
+  const expectedDriverId = resolveDriverIdFromLogin(normalized);
+
   const res = await fetch('/api/auth/driver/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pin }),
+    body: JSON.stringify({
+      pin,
+      ...(expectedDriverId ? { loginUsername: normalized } : {}),
+    }),
   });
   if (!res.ok) return null;
 
   const { token } = (await res.json()) as { token: string };
   const claims = decodeJwtPayload(token);
-  const normalized = username.trim().toLowerCase();
-  const expectedDriverId = DRIVER_USERNAME_MAP[normalized];
 
   if (expectedDriverId && claims.driverId && claims.driverId !== expectedDriverId) {
     return null;
   }
 
+  const driverId = claims.driverId ?? expectedDriverId;
+
   return {
     token,
     role: 'DRIVER',
-    driverId: claims.driverId ?? expectedDriverId,
-    username: normalized || `driver-${claims.driverId ?? 'unknown'}`,
+    driverId,
+    username: normalized || `driver-${driverId ?? 'unknown'}`,
+    displayName: driverDisplayNameForId(driverId),
   };
 }
 
@@ -146,6 +152,9 @@ export function loadSession(): AuthSession | null {
       if (session.role === 'DRIVER' && session.token && !session.driverId) {
         const claims = decodeJwtPayload(session.token);
         session.driverId = claims.driverId;
+      }
+      if (session.role === 'DRIVER' && session.driverId && !session.displayName) {
+        session.displayName = driverDisplayNameForId(session.driverId);
       }
       return session;
     } catch {
