@@ -28,6 +28,10 @@ export interface Waybill {
   capturedAt?: string;
   createdAt?: string;
   deliveredAt?: string | null;
+  signatureName?: string;
+  signatureImageUrl?: string;
+  proofPhotoUrl?: string;
+  signedAt?: string | null;
 }
 
 /** Resolves display price from API fields or route calculator output. */

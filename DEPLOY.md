@@ -97,9 +97,27 @@ Migrations run automatically on container start (`prisma migrate deploy`).
 
 ### 5. Seed synthetic business data (once)
 
+**Production:** `node dist/seed.js` only upserts drivers, payroll employees, dispatchers, and route rates. It does **not** wipe delivery data unless you explicitly set `SEED_ARCHIVE_RESEED=true`.
+
 ```bash
 fly ssh console --app iaw-saas -C 'sh -c "cd /app/backend && node dist/seed.js"'
 ```
+
+For local dev with archive CSV reseed (wipes all waybills):
+
+```bash
+SEED_ARCHIVE_RESEED=true npm run seed
+```
+
+### 5b. Restore delivery data after accidental wipe
+
+If delivery records were cleared, restore from the bundled archive CSV and re-sync intake:
+
+```bash
+fly ssh console --app iaw-saas -C 'sh -c "cd /app/backend && node dist/restoreDeliveryData.js"'
+```
+
+**Note:** Fly Postgres has no automatic snapshots on the free tier — exact point-in-time undo requires your own backups. The restore script re-imports YTD archive rows and resets Google Sheets intake; it does not recover driver-captured waybills that were never in the archive or sheet.
 
 ### 6. Custom domain + Cloudflare DNS
 

@@ -3,8 +3,8 @@ Mobile-first delivery capture system: pickup capture → e-signature →
 invoice generation → QuickBooks Online journal entries.
 
 ## Stack
-(fill in once decided — e.g. React Native / Node+Postgres / QuickBooks
-Online API)
+React PWA (Vite) + Node/Express/TypeScript/Prisma + PostgreSQL.
+QuickBooks Online API integration is post-MVP.
 
 ## Data Sensitivity
 - Customer names, addresses, and signature data are PII.

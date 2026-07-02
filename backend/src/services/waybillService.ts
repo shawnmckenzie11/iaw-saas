@@ -48,6 +48,12 @@ export async function appendEventAndProject(options: AppendEventOptions) {
       throw err;
     }
 
+    if (record.status === 'VOIDED') {
+      const err = new Error('Waybill has been voided');
+      (err as Error & { statusCode: number }).statusCode = 422;
+      throw err;
+    }
+
     const transition = validateStatusTransition(record.status, eventType);
     if (!transition.valid) {
       const err = new Error(transition.error || 'Invalid transition');
@@ -218,6 +224,17 @@ export async function syncEventsBatch(
     if (existingEvent) {
       syncedIds.push(evt.id);
       continue;
+    }
+
+    if (
+      evt.eventType === 'WAYBILL_CREATED' &&
+      /^K-\d{5}$/.test(evt.waybillNumber) &&
+      record &&
+      record.clientSideUuid !== evt.clientSideUuid
+    ) {
+      const err = new Error(`Waybill ${evt.waybillNumber} already exists`);
+      (err as Error & { statusCode: number }).statusCode = 409;
+      throw err;
     }
 
     if (!record && evt.eventType === 'WAYBILL_CREATED') {

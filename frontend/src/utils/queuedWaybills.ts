@@ -58,6 +58,9 @@ export async function mergeQueuedWaybills(apiWaybills: Waybill[]): Promise<Waybi
       if (evt.eventType === 'WAYBILL_CREATED') {
         wb = waybillFromEvent(evt, wb);
         wb.status = 'DRAFT';
+        if (typeof evt.data?.driverId === 'string') {
+          wb.driverId = evt.data.driverId;
+        }
       } else if (evt.eventType === 'WAYBILL_ASSIGNED') {
         wb = wb ?? waybillFromEvent(evt);
         if (evt.data?.driverId === null) {
@@ -75,6 +78,9 @@ export async function mergeQueuedWaybills(apiWaybills: Waybill[]): Promise<Waybi
       } else if (evt.eventType === 'WAYBILL_PICKED_UP') {
         wb = waybillFromEvent(evt, wb);
         wb.status = 'PICKED_UP';
+        if (typeof evt.data?.driverId === 'string') {
+          wb.driverId = evt.data.driverId;
+        }
       } else if (evt.eventType === 'WAYBILL_DELIVERED') {
         wb = waybillFromEvent(evt, wb);
         wb.status = 'DELIVERED';

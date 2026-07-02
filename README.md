@@ -21,7 +21,7 @@ graph TD
 ### Key Architectural Pillars
 
 1. **Offline-first PWA**: Lightweight events and heavy blobs sync on separate queues with visible pending counters.
-2. **Cryptographic signature integrity**: Signature vectors are hashed with waybill metadata for tamper evidence (mobile prototype + post-MVP hardening).
+2. **Cryptographic signature integrity**: Signature vectors are hashed with waybill metadata for tamper evidence (post-MVP hardening).
 3. **Append-only event sourcing**: Clients never mutate read tables directly; the server replays `waybill_events` into materialized state.
 4. **Database-driven rates**: Flat rates and category rules (Redpath ODP, Victoria Mine, Category 5 nodes, etc.) drive pricing instead of hardcoded UI logic.
 5. **Dual auth + RBAC**: Drivers sign in with **username + 4-digit PIN** (e.g. `driver1` / `1111`); dispatchers sign in with **email + password** (or legacy shortcut `dispatch` / `0000` on the driver tab). JWTs gate every API route.
@@ -40,11 +40,10 @@ graph TD
 ├── tests/e2e/              # Playwright Tier 1 specs (F1–F6)
 ├── docs/                   # Schema DDL, driver/dispatcher SOPs
 ├── HANDOFF.md              # Milestone status and verification
-├── TEST_INFRA.md           # Tier 1 feature/test case definitions
-└── mobile/                 # Earlier Expo prototype (reference implementation)
+└── TEST_INFRA.md           # Tier 1 feature/test case definitions
 ```
 
-The **frontend PWA** now carries the business UI from the pre-agent mobile prototype: tabular dispatch dashboard, location autocomplete chips, conditional dropoff routing, and live route price preview via `frontend/src/utils/pricing.ts`.
+The **frontend PWA** carries the business UI: tabular dispatch dashboard, location autocomplete chips, conditional dropoff routing, and live route price preview via `frontend/src/utils/pricing.ts`.
 
 ---
 
@@ -90,8 +89,6 @@ npm run dev
 
 - **Backend API**: [http://localhost:3002](http://localhost:3002)
 - **Frontend PWA**: [http://localhost:3000](http://localhost:3000)
-
-Do **not** run `npx expo start` from the repo root. That command only applies to the legacy `mobile/` prototype.
 
 ---
 
@@ -171,10 +168,12 @@ Dispatcher-only endpoint: `GET /api/admin/rates`.
 
 ### Pricing Categories (client-side rules)
 
-Implemented in `frontend/src/utils/pricing.ts` (ported from `mobile/`):
+Implemented in `frontend/src/utils/pricing.ts` (mirrored in `backend/src/utils/pricing.ts`):
 
 | Category | Example locations | Base price |
 |----------|-------------------|------------|
+| Bus (ON) | Ontario Northland bus terminal | $15 to bus |
+| Airport | Sudbury Airport | $75 to airport |
 | Category 1 | B&D Manufacturing, Bélanger Construction, Chelmsford/Hanmer | $50 Sudbury ↔ outlying |
 | Category 2 | Mobile Parts, DMC Mining, Val Caron/Azilda | $40 Sudbury ↔ outlying |
 | Category 3 (Redpath ODP) | Onaping Depth Project (ODP) | $125 |
@@ -218,34 +217,12 @@ First-time Playwright setup:
 npx playwright install
 ```
 
-### Legacy mobile unit test
-
-The Expo prototype includes a standalone hashing/waybill format test:
-
-```bash
-node mobile/src/tests/test_hashing_and_waybill.js
-```
-
 ---
 
 ## Simulating Offline & Conflicts
 
 - **Offline**: Use the **Live / Offline** toggle on the dashboard. Pending events queue in IndexedDB (`iaw_db`) and appear in the pending-sync badge.
-- **Conflict simulation (mobile prototype)**: Enter `"conflict"` or `"fail"` in the parcel description during pickup to force a sync conflict badge on the legacy Expo dashboard.
-
----
-
-## Legacy `mobile/` Expo App
-
-Optional reference implementation with the original full pickup stepper UI:
-
-```bash
-cd mobile
-npm install
-npx expo start
-```
-
-Press **`w`** for web (LocalStorage fallback). For v1.0.0 Tier 1 development and E2E verification, use `npm run dev` from the repo root — the frontend PWA now mirrors the core business tables and location pre-populations from this prototype.
+- **Conflict simulation**: Enter `"conflict"` or `"fail"` in the parcel description during pickup to force a sync conflict badge on the dashboard.
 
 ---
 

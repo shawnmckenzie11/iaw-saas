@@ -82,6 +82,48 @@ async function main() {
   });
   console.log(`[Seed] Driver 4 upserted: ${d4.firstName} ${d4.lastName} (${d4.id})`);
 
+  const defaultPayRates: Record<string, number> = {
+    'drv-01': 22.5,
+    'drv-02': 21.0,
+    'drv-03': 21.5,
+    'drv-04': 20.75,
+  };
+
+  const drivers = await prisma.driver.findMany({ where: { isActive: true } });
+  for (const driver of drivers) {
+    const email = `${driver.firstName.toLowerCase()}.${driver.lastName.toLowerCase().replace(/\s+/g, '')}@example.com`;
+    const payRate = defaultPayRates[driver.id] ?? 20.0;
+    const existing = await prisma.employee.findFirst({
+      where: { driverId: driver.id },
+    });
+    if (existing) {
+      await prisma.employee.update({
+        where: { id: existing.id },
+        data: {
+          firstName: driver.firstName,
+          lastName: driver.lastName,
+          email: existing.email ?? email,
+          role: 'DRIVER',
+          isActive: true,
+          payRate,
+        },
+      });
+    } else {
+      await prisma.employee.create({
+        data: {
+          firstName: driver.firstName,
+          lastName: driver.lastName,
+          email,
+          role: 'DRIVER',
+          isActive: true,
+          payRate,
+          driverId: driver.id,
+        },
+      });
+    }
+  }
+  console.log(`[Seed] Payroll employees upserted for ${drivers.length} driver(s)`);
+
   const dispatcherPassword = 'password123';
   const passwordHash = await bcrypt.hash(dispatcherPassword, 10);
 
@@ -125,11 +167,15 @@ async function main() {
     });
   }
 
-  await reseedFromArchive(prisma, {
-    since: archiveYearStart(2026),
-    clearExisting: true,
-    writeTopPickups: true,
-  });
+  if (process.env.SEED_ARCHIVE_RESEED === 'true') {
+    await reseedFromArchive(prisma, {
+      since: archiveYearStart(2026),
+      clearExisting: true,
+      writeTopPickups: true,
+    });
+  } else {
+    console.log('[Seed] Skipping archive reseed (set SEED_ARCHIVE_RESEED=true to enable).');
+  }
 
   console.log('[Seed] Seeding completed successfully.');
 }

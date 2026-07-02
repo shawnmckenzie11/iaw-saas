@@ -33,7 +33,7 @@ export default function App() {
   const [isOnline, setIsOnline] = useState(() => readNetworkOnline());
 
   useEffect(() => {
-    ensureFreshAppBuildCache();
+    void ensureFreshAppBuildCache();
   }, []);
 
   useEffect(() => {
@@ -154,6 +154,7 @@ export default function App() {
   if (screen === 'accounting') {
     return (
       <AccountingPage
+        session={session}
         waybills={cachedWaybills}
         onBack={() => setScreen('dashboard')}
       />

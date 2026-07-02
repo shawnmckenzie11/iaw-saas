@@ -2,8 +2,11 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../config/db';
 import { requireAuth, requireRole } from '../middleware/auth';
 import { runIntakeSyncOnDemand } from '../intake/registerAdapters';
+import payrollRoutes from './payrollRoutes';
 
 const router = Router();
+
+router.use('/employees', payrollRoutes);
 
 /**
  * GET /api/admin/rates — Returns route rate lookup table (dispatcher only).

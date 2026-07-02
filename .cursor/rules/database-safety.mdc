@@ -1,0 +1,36 @@
+---
+description: Require explicit user approval before destructive or substantial database operations
+alwaysApply: true
+---
+
+# Database Safety — Approval Required
+
+Never run operations that **substantially affect production or shared database data** without **explicit user approval in the current conversation**.
+
+## Always ask first
+
+- Running `seed.js`, `seed.ts`, `reseed:archive`, or `restoreDeliveryData.js` against **production** (Fly SSH, remote `DATABASE_URL`, etc.)
+- Any script with `clearExisting: true`, bulk `deleteMany`, or wipe/truncate semantics
+- Setting `SEED_ARCHIVE_RESEED=true` or equivalent destructive env flags
+- Resetting intake cursors or forcing full re-imports that recreate large row sets
+- `prisma migrate` commands that drop columns/tables or rewrite data on production
+- Ad-hoc SQL or Prisma writes against production via proxy/SSH
+- Restoring, rolling back, or “cleaning up” production data without a confirmed backup path
+
+## Safe without asking (unless user says otherwise)
+
+- Local dev against a local `.env` database the user owns
+- Read-only queries (`count`, `findMany`, `SELECT`) for investigation
+- Adding migrations or seed logic in code **without executing** on production
+- Running Jest/integration tests against test databases
+
+## When approval is needed
+
+1. State **what** will run, **which environment** (local vs Fly production), and **expected impact** (e.g. “deletes all waybills”).
+2. Wait for explicit confirmation (e.g. “yes, run it on production”).
+3. Do not infer approval from “deploy”, “seed payroll”, or “fix production” alone.
+
+## Prefer safe defaults
+
+- Production `seed.js` must not wipe delivery data (use upserts only; archive reseed opt-in via env).
+- Document destructive commands in `DEPLOY.md` with warnings, not as default steps.

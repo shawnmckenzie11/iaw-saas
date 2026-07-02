@@ -14,7 +14,7 @@ const router = Router();
  * GET /api/waybills — Lists waybills visible to the authenticated user (RBAC).
  */
 router.get('/', requireAuth, async (req: Request, res: Response) => {
-  const where =
+  const roleFilter =
     req.auth!.role === 'DRIVER'
       ? {
           OR: [{ driverId: req.auth!.driverId }, { driverId: null }],
@@ -22,12 +22,35 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
       : {};
 
   const records = await prisma.deliveryRecord.findMany({
-    where,
+    where: {
+      ...roleFilter,
+      status: { not: 'VOIDED' },
+    },
     orderBy: { capturedAt: 'desc' },
     take: 500,
   });
 
   res.json(records.map(serializeWaybill));
+});
+
+/** Manual driver waybill numbers use K-##### and must be unique among K- prefixed records. */
+const MANUAL_K_WAYBILL = /^K-\d{5}$/;
+
+/**
+ * GET /api/waybills/check/:waybillNumber — Returns whether a manual K- waybill already exists.
+ */
+router.get('/check/:waybillNumber', requireAuth, async (req: Request, res: Response) => {
+  const waybillNumber = decodeURIComponent(req.params.waybillNumber);
+  if (!MANUAL_K_WAYBILL.test(waybillNumber)) {
+    res.json({ exists: false });
+    return;
+  }
+
+  const existing = await prisma.deliveryRecord.findUnique({
+    where: { waybillNumber },
+    select: { id: true },
+  });
+  res.json({ exists: !!existing });
 });
 
 /**
@@ -137,7 +160,11 @@ router.post('/:waybillNumber/events', requireAuth, checkWaybillAccess, async (re
   const user = req.user || req.auth;
   const sanitizedData = { ...data };
   if (user?.role === 'DRIVER') {
-    if (eventType === 'DISPATCHER_OVERRIDE' || eventType === 'DISPATCHER_CORRECTION') {
+    if (
+      eventType === 'DISPATCHER_OVERRIDE' ||
+      eventType === 'DISPATCHER_CORRECTION' ||
+      eventType === 'WAYBILL_VOIDED'
+    ) {
       res.status(403).json({ error: 'Forbidden event type for driver' });
       return;
     }
@@ -145,10 +172,22 @@ router.post('/:waybillNumber/events', requireAuth, checkWaybillAccess, async (re
       delete sanitizedData.calculatedPrice;
       delete sanitizedData.pricingTotalCost;
     }
+    if (
+      user.driverId &&
+      (eventType === 'WAYBILL_CREATED' || eventType === 'WAYBILL_PICKED_UP') &&
+      sanitizedData.driverId == null
+    ) {
+      sanitizedData.driverId = user.driverId;
+    }
   }
 
   try {
     let eventData = sanitizedData ?? {};
+
+    if (eventType === 'WAYBILL_VOIDED' && user?.role !== 'DISPATCHER') {
+      res.status(403).json({ error: 'Forbidden event type' });
+      return;
+    }
 
     if (eventType === 'WAYBILL_ASSIGNED' && user?.role === 'DISPATCHER') {
       const current = await prisma.deliveryRecord.findUnique({

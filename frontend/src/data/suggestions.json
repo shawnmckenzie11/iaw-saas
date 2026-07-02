@@ -2,10 +2,12 @@
   "commonPickups": [
     "ALS Environmental",
     "Anmar",
+    "Airport",
     "B&D Manufacturing",
     "BDI Canada Inc.",
     "B\u00e9langer Construction",
     "Brankor Trophies",
+    "Bus (ON)",
     "Bull Power",
     "Consbec",
     "CRD (Creighton Rock Drill)",
@@ -481,6 +483,11 @@
       "lat": 46.4312,
       "lon": -81.0811
     },
+    "Airport": {
+      "address": "5000 Airport Rd, Garson, ON P3L 1V4",
+      "lat": 46.625,
+      "lon": -80.798
+    },
     "B&D Manufacturing": {
       "address": "2500 Elm St, Chelmsford, ON P0Y 1L0",
       "lat": 46.579,
@@ -500,6 +507,11 @@
       "address": "4785 Highway 69 North, Val Therese, ON P3P 1S7",
       "lat": 46.6212,
       "lon": -80.9854
+    },
+    "Bus (ON)": {
+      "address": "161 Rainbow Ave, Sudbury, ON P3E 3T5",
+      "lat": 46.489,
+      "lon": -80.994
     },
     "Bull Power": {
       "address": "198 Mumford Rd, Lively, ON P3Y 1L2",

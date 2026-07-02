@@ -9,6 +9,9 @@ export function getPriceCategory(locationName: string): string | null {
   if (name.includes('victoria mine') || name.includes('victoria mining')) {
     return 'CATEGORY_4'; // Victoria Mining
   }
+
+  if (isBusOn(name)) return 'BUS_ON';
+  if (isAirport(name)) return 'AIRPORT';
   
   // Category 1: Chelmsford / Hanmer
   const cat1List = ['total equip', 'bnd manufacturing', 'b&d manufacturing', 'belanger construction', 'bélanger construction', 'brancore', 'brankor'];
@@ -29,6 +32,23 @@ export function getPriceCategory(locationName: string): string | null {
   if (isLively(name)) return 'LIVELY';
 
   return null;
+}
+
+/** Ontario Northland bus terminal (Sudbury). */
+function isBusOn(name: string): boolean {
+  return (
+    name.includes('bus (on)') ||
+    name.includes('ontario northland') ||
+    name.includes('northland bus') ||
+    name === 'bus' ||
+    name.includes('bus depot') ||
+    name.includes('greyhound bus')
+  );
+}
+
+/** Sudbury Airport. */
+function isAirport(name: string): boolean {
+  return name.includes('airport') || name.includes('sudbury airport');
 }
 
 function isSouthEnd(name: string): boolean {
@@ -67,6 +87,16 @@ const NODE_INDEX: Record<string, number> = {
 function calculateBasePrice(pickup: string, dropoff: string): { price: number; isManual: boolean; category: string } {
   const catP = getPriceCategory(pickup);
   const catD = getPriceCategory(dropoff);
+
+  // Rule: Bus (ON) dropoff ($15)
+  if (catD === 'BUS_ON') {
+    return { price: 15, isManual: false, category: 'Bus (ON)' };
+  }
+
+  // Rule: Airport dropoff ($75)
+  if (catD === 'AIRPORT') {
+    return { price: 75, isManual: false, category: 'Airport' };
+  }
 
   // Rule 3: Redpath ODP ($125)
   if (catP === 'CATEGORY_3' || catD === 'CATEGORY_3') {
@@ -223,6 +253,8 @@ export function getLocationShortName(name: string): string {
     case "Dr. Jordi Cisa": return "Dr. Cisa";
     case "Enterprise Radiators": return "Enterprise Rad";
     case "Staples": return "Staples";
+    case "Bus (ON)": return "Bus (ON)";
+    case "Airport": return "Airport";
     default:
       const parts = name.split(' ');
       if (parts.length > 1) {

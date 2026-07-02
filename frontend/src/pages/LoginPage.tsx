@@ -67,12 +67,10 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
         {mode === 'driver' ? (
           <>
-            <p className="login-mode-hint">Use username + 4-digit PIN (e.g. driver1 / 1111).</p>
             <label>Username</label>
             <input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="e.g. driver1 or dispatch"
               autoCapitalize="none"
               autoCorrect="off"
             />
@@ -81,7 +79,6 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               type="password"
               value={passcode}
               onChange={(e) => setPasscode(e.target.value)}
-              placeholder="4-digit passcode"
               inputMode="numeric"
               autoCapitalize="none"
               maxLength={4}
@@ -89,16 +86,11 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           </>
         ) : (
           <>
-            <p className="login-mode-hint">
-              Use email + password. Shortcut: username <strong>dispatch</strong> / PIN{' '}
-              <strong>0000</strong> on the Driver tab also works.
-            </p>
             <label>Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="dispatcher@example.com"
               autoCapitalize="none"
               autoCorrect="off"
             />
@@ -107,7 +99,6 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="password123"
               autoCapitalize="none"
             />
           </>

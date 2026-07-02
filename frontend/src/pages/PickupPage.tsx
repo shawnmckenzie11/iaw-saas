@@ -11,6 +11,7 @@ import type { AuthSession } from '../services/auth';
 import { syncManager } from '../services/SyncManager';
 import type { Waybill } from '../types/waybill';
 import { calculatePrice } from '../utils/pricing';
+import { hasPendingDropoff } from '../utils/pendingDropoff';
 
 interface PickupPageProps {
   session: AuthSession;
@@ -66,6 +67,8 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
   const [selectedPickupKey, setSelectedPickupKey] = useState<string | null>(null);
 
   const isEditing = !!editWaybill;
+  const isDriver = session.role === 'DRIVER';
+  const resolvingPendingDropoff = isEditing && editWaybill ? hasPendingDropoff(editWaybill) : false;
   const finalDesc = descriptionOption === 'Other' ? description : descriptionOption;
   const finalWeight =
     weightClassOption === 'Other' ? `Weight: ${weightClass.trim()} lbs` : weightClassOption;
@@ -132,16 +135,28 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
     setVehicleType(wb.vehicleType ?? 'CAR');
     setPriority(wb.priority ?? 'REGULAR');
 
-    if (wb.waybillNumber.startsWith('K')) {
-      setManualWaybill(wb.waybillNumber);
+    const kMatch = wb.waybillNumber.match(/^K-(\d{5})$/);
+    if (kMatch) {
+      setManualWaybill(kMatch[1]);
     }
 
     const commonPickups = locationSuggestions.commonPickups;
     const commonDropoffs = locationSuggestions.conditionalDropoffs[wb.pickupLocationName] ?? [];
     setPickupIsOther(!commonPickups.includes(wb.pickupLocationName));
-    setDropoffIsOther(!commonDropoffs.includes(wb.dropoffDestinationName));
+
+    if (hasPendingDropoff(wb)) {
+      setDropoffDestination('');
+      setDropoffAddress('');
+      setDropoffContact('');
+      setDropoffPhone('');
+      setDropoffIsOther(false);
+      setCurrentStep(2);
+    } else {
+      setDropoffIsOther(!commonDropoffs.includes(wb.dropoffDestinationName));
+      setCurrentStep(1);
+    }
+
     setSelectedPickupKey(wb.pickupLocationName);
-    setCurrentStep(1);
   }, [editWaybill]);
 
   /**
@@ -176,7 +191,7 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
       const isDescValid = descriptionOption === 'Other' ? !!description.trim() : true;
       const isWeightValid =
         weightClassOption === 'Other' ? isValidCustomWeight(weightClass) : true;
-      const isManualWaybillValid = !manualWaybill.trim() || /^K\d{5}$/.test(manualWaybill.trim());
+      const isManualWaybillValid = !manualWaybill.trim() || /^\d{5}$/.test(manualWaybill.trim());
       return !!pickupLocation && !!pickupAddress && isDescValid && isWeightValid && isManualWaybillValid;
     }
     if (currentStep === 2) {
@@ -191,6 +206,7 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
   const buildEventData = () => {
     const coordsP = coordsForLocation(pickupLocation);
     const coordsD = coordsForLocation(dropoffDestination);
+    const activeDriverId = session.driverId ?? undefined;
     return {
       pickupLocationName: pickupLocation,
       pickupAddress,
@@ -206,7 +222,7 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
       dropoffContactPhone: dropoffPhone || undefined,
       dropoffLatitude: coordsD.lat,
       dropoffLongitude: coordsD.lon,
-      driverId: session.driverId,
+      driverId: activeDriverId,
       vehicleType,
       priority,
       skidRequired,
@@ -215,6 +231,32 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
       calculatedPrice: pricingEst.price,
       priceCategory: pricingEst.category,
     };
+  };
+
+  /**
+   * Resolves the manual 5-digit entry to a K-##### waybill number, or null when empty.
+   */
+  const resolveManualWaybillNumber = (): string | null => {
+    const digits = manualWaybill.trim();
+    if (!digits) return null;
+    return `K-${digits}`;
+  };
+
+  /**
+   * Returns true when the requested K-##### waybill is not already in the database.
+   */
+  const assertManualWaybillAvailable = async (waybillNumber: string): Promise<boolean> => {
+    if (!session.token) return true;
+    try {
+      const res = await fetch(`/api/waybills/check/${encodeURIComponent(waybillNumber)}`, {
+        headers: { Authorization: `Bearer ${session.token}` },
+      });
+      if (!res.ok) return true;
+      const data = (await res.json()) as { exists?: boolean };
+      return !data.exists;
+    } catch {
+      return true;
+    }
   };
 
   /**
@@ -287,8 +329,13 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
         data: { ...pendingPayload, pickedUpAt },
       });
     } else {
+      const manualNumber = resolveManualWaybillNumber();
+      const waybillNumber = manualNumber ?? `W-${Date.now().toString().slice(-4)}`;
+      if (manualNumber && !(await assertManualWaybillAvailable(manualNumber))) {
+        setErrorMsg(`Waybill ${manualNumber} already exists. Choose a different number.`);
+        return;
+      }
       const id = crypto.randomUUID();
-      const waybillNumber = manualWaybill.trim() || `W-${Date.now().toString().slice(-4)}`;
       await queueNewWaybillEvents(waybillNumber, id, eventData, true);
     }
 
@@ -317,8 +364,13 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
         data: { ...eventData, pickedUpAt },
       });
     } else {
+      const manualNumber = resolveManualWaybillNumber();
+      const waybillNumber = manualNumber ?? `W-${Date.now().toString().slice(-4)}`;
+      if (manualNumber && !(await assertManualWaybillAvailable(manualNumber))) {
+        setErrorMsg(`Waybill ${manualNumber} already exists. Choose a different number.`);
+        return;
+      }
       const id = crypto.randomUUID();
-      const waybillNumber = manualWaybill.trim() || `W-${Date.now().toString().slice(-4)}`;
       await queueNewWaybillEvents(waybillNumber, id, eventData, false);
     }
 
@@ -362,17 +414,10 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
   };
 
   /**
-   * Normalizes manual waybill input to K##### format.
+   * Restricts manual waybill input to five digits (stored as K-##### on save).
    */
   const handleManualWaybillChange = (text: string) => {
-    let cleaned = text.toUpperCase();
-    if (cleaned.length > 0 && !cleaned.startsWith('K')) {
-      cleaned = `K${cleaned.replace(/[^0-9]/g, '')}`;
-    } else {
-      cleaned = `K${cleaned.slice(1).replace(/[^0-9]/g, '')}`;
-    }
-    if (cleaned.length > 6) cleaned = cleaned.slice(0, 6);
-    setManualWaybill(cleaned === 'K' ? '' : cleaned);
+    setManualWaybill(text.replace(/\D/g, '').slice(0, 5));
   };
 
   /**
@@ -389,7 +434,11 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
           ← {currentStep === 1 ? 'Exit' : 'Back'}
         </button>
         <h2 className="pickup-title">
-          {isEditing ? `Continue Pickup — ${editWaybill?.waybillNumber}` : 'New Delivery Capture'}
+          {resolvingPendingDropoff
+            ? `Set Dropoff — ${editWaybill?.waybillNumber}`
+            : isEditing
+              ? `Continue Pickup — ${editWaybill?.waybillNumber}`
+              : 'New Delivery Capture'}
         </h2>
       </header>
 
@@ -484,90 +533,98 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
 
             {!isEditing && (
               <>
-                <label className="field-label">Optional Manual Waybill #</label>
                 <input
                   className="wizard-input"
                   value={manualWaybill}
                   onChange={(e) => handleManualWaybillChange(e.target.value)}
-                  placeholder="Starts with K followed by 5 digits (e.g. K00001)"
-                  maxLength={6}
+                  placeholder="Optional: Enter Manual 5-digit Waybill #"
+                  inputMode="numeric"
+                  maxLength={5}
                 />
-                {manualWaybill.trim().length > 0 && !/^K\d{5}$/.test(manualWaybill.trim()) && (
-                  <p className="field-error">⚠️ Must be K followed by 5 digits (e.g. K00001)</p>
+                {manualWaybill.trim().length > 0 && !/^\d{5}$/.test(manualWaybill.trim()) && (
+                  <p className="field-error">⚠️ Enter exactly 5 digits (saved as K-#####)</p>
                 )}
               </>
             )}
 
             <label className="field-label">Delivery Details *</label>
             <div className="picker-row">
-              {[STANDARD_DESCRIPTION, 'Other'].map((opt) => (
-                <button
-                  key={opt}
-                  type="button"
-                  className={descriptionOption === opt ? 'picker-option active' : 'picker-option'}
-                  onClick={() => {
-                    setDescriptionOption(opt);
-                    setDescription(opt === 'Other' ? '' : STANDARD_DESCRIPTION);
-                  }}
-                >
-                  {opt}
-                </button>
-              ))}
-            </div>
-            {descriptionOption === 'Other' && (
+              <button
+                type="button"
+                className={
+                  descriptionOption === STANDARD_DESCRIPTION ? 'picker-option active' : 'picker-option'
+                }
+                onClick={() => {
+                  setDescriptionOption(STANDARD_DESCRIPTION);
+                  setDescription(STANDARD_DESCRIPTION);
+                }}
+              >
+                {STANDARD_DESCRIPTION}
+              </button>
               <input
-                className="wizard-input"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Note any important details or challenges for dispatch..."
-                required
+                type="text"
+                className={`picker-option picker-other-input${
+                  descriptionOption === 'Other' ? ' active' : ''
+                }`}
+                value={descriptionOption === 'Other' ? description : ''}
+                placeholder="Other"
+                onFocus={() => {
+                  setDescriptionOption('Other');
+                  if (description === STANDARD_DESCRIPTION) setDescription('');
+                }}
+                onChange={(e) => {
+                  setDescriptionOption('Other');
+                  setDescription(e.target.value);
+                }}
               />
-            )}
+            </div>
 
             <label className="field-label">Weight Range *</label>
             <div className="picker-row">
-              {[UNDER_75_WEIGHT, 'Other'].map((opt) => (
-                <button
-                  key={opt}
-                  type="button"
-                  className={weightClassOption === opt ? 'picker-option active' : 'picker-option'}
-                  onClick={() => {
-                    setWeightClassOption(opt);
-                    if (opt !== 'Other') {
-                      setWeightClass('');
-                    }
-                  }}
-                >
-                  {opt === 'Other' ? 'Enter weight' : opt.replace('Weight: ', '')}
-                </button>
-              ))}
+              <button
+                type="button"
+                className={
+                  weightClassOption === UNDER_75_WEIGHT ? 'picker-option active' : 'picker-option'
+                }
+                onClick={() => {
+                  setWeightClassOption(UNDER_75_WEIGHT);
+                  setWeightClass('');
+                }}
+              >
+                {UNDER_75_WEIGHT.replace('Weight: ', '')}
+              </button>
+              <input
+                type="text"
+                className={`picker-option picker-other-input${
+                  weightClassOption === 'Other' ? ' active' : ''
+                }`}
+                value={weightClassOption === 'Other' ? weightClass : ''}
+                placeholder="Other (lbs)"
+                inputMode="numeric"
+                onFocus={() => setWeightClassOption('Other')}
+                onChange={(e) => {
+                  setWeightClassOption('Other');
+                  handleCustomWeightChange(e.target.value);
+                }}
+              />
             </div>
-            {weightClassOption === 'Other' && (
-              <>
-                <input
-                  className="wizard-input"
-                  value={weightClass}
-                  onChange={(e) => handleCustomWeightChange(e.target.value)}
-                  placeholder="Enter whole number over 75 lbs"
-                  inputMode="numeric"
-                />
-                {weightClass.trim().length > 0 && !isValidCustomWeight(weightClass) && (
-                  <p className="field-error">⚠️ Weight must be a whole number greater than 75 lbs.</p>
-                )}
-              </>
-            )}
+            {weightClassOption === 'Other' &&
+              weightClass.trim().length > 0 &&
+              !isValidCustomWeight(weightClass) && (
+                <p className="field-error">⚠️ Weight must be a whole number greater than 75 lbs.</p>
+              )}
 
             <button type="button" className="option-toggle" onClick={() => setSkidRequired((v) => !v)}>
               <span className={`custom-checkbox ${skidRequired ? 'checked' : ''}`}>
                 {skidRequired && '✓'}
               </span>
-              <span>Skid Required (+$20)</span>
+              <span>{isDriver ? 'Skid Required' : 'Skid Required (+$20)'}</span>
             </button>
             <button type="button" className="option-toggle" onClick={() => setPriority((p) => (p === 'RUSH' ? 'REGULAR' : 'RUSH'))}>
               <span className={`custom-checkbox ${priority === 'RUSH' ? 'checked' : ''}`}>
                 {priority === 'RUSH' && '✓'}
               </span>
-              <span>Rush Delivery (Priority) (+$15)</span>
+              <span>{isDriver ? 'Rush Delivery (Priority)' : 'Rush Delivery (Priority) (+$15)'}</span>
             </button>
             <button type="button" className="option-toggle" onClick={() => setPodRequired((v) => !v)}>
               <span className={`custom-checkbox ${podRequired ? 'checked' : ''}`}>
@@ -664,12 +721,14 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
             </div>
           )}
 
-          <div className="price-preview">
-            <span className="price-preview-label">Route Quote</span>
-            {pricingEst.price > 0
-              ? `$${pricingEst.price.toFixed(2)} — ${pricingEst.category}`
-              : `Manual — ${pricingEst.category}`}
-          </div>
+          {!isDriver && (
+            <div className="price-preview">
+              <span className="price-preview-label">Route Quote</span>
+              {pricingEst.price > 0
+                ? `$${pricingEst.price.toFixed(2)} — ${pricingEst.category}`
+                : `Manual — ${pricingEst.category}`}
+            </div>
+          )}
 
           <div className="navigation-row">
             <button type="button" className="btn-primary nav-btn-next" disabled={!isStepValid()} onClick={() => void handleNext()}>

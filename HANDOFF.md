@@ -32,11 +32,11 @@ This document describes the architectural state, development status, verificatio
 | RBAC Middleware | `backend/src/middleware/auth.ts` | **COMPLETE** | JWT role claims; driver/dispatcher gates. |
 | Waybill API | `GET/POST /api/waybills`, `GET /api/waybills` list, events sub-routes | **COMPLETE** | Event sourcing with replay projection; list endpoint for dashboard. |
 | Sync API | `POST /api/sync/events`, `POST /api/sync/blobs` | **COMPLETE** | Batch events + multipart blob upload. |
-| Admin API | `GET /api/admin/rates`, `POST /api/admin/intake/sync` | **COMPLETE** | Dispatcher-only route rates + manual intake sync. |
-| Frontend PWA | `frontend/` | **COMPLETE** | Multi-step pickup, sign-off, dispatch dashboard, accounting, conflict sync. |
+| Admin API | `GET /api/admin/rates`, `POST /api/admin/intake/sync`, `GET/POST/PUT/DELETE /api/admin/employees` | **COMPLETE** | Dispatcher-only route rates, intake sync, payroll CRUD. |
+| Frontend PWA | `frontend/` | **COMPLETE** | Multi-step pickup, sign-off, dispatch dashboard, accounting (invoices + payroll), conflict sync. |
 | IndexedDB Queues | `frontend/src/db/indexedDb.ts` | **COMPLETE** | Dual queues with PENDING/SYNCED/CONFLICT event states. |
-| Driver Portal UI | `frontend/src/pages/PickupPage.tsx`, `SignOffPage.tsx` | **COMPLETE** | 3-step pickup wizard ported from `mobile/` (More/Other chips, conditional dropoffs); sign-off on SignOffPage. |
-| Dispatcher Portal UI | `frontend/src/pages/DashboardPage.tsx`, `AccountingPage.tsx` | **COMPLETE** | Tabs, driver assign chips (always visible + reassign for driver-created jobs), price modal, completed filters. |
+| Driver Portal UI | `frontend/src/pages/PickupPage.tsx`, `SignOffPage.tsx` | **COMPLETE** | 3-step pickup wizard (More/Other chips, conditional dropoffs); pending-dropoff gating before delivery; sign-off on SignOffPage. |
+| Dispatcher Portal UI | `frontend/src/pages/DashboardPage.tsx`, `AccountingPage.tsx` | **COMPLETE** | Tabs, driver assign chips, completed tab with capture icons + detail modal (print/email), payroll CRUD tab. |
 | E2E Test Suite | `tests/e2e/` | **COMPLETE** | 34 Tier 1 tests passing (30 spec + sanity). |
 
 ---
@@ -117,26 +117,43 @@ Runs backend Jest (`test:backend`) then Playwright Tier 1 (`test:e2e`).
 
 ---
 
-## 5. Mobile Prototype Port (2026-07-02)
+## 5. PWA Business UI (2026-07-02)
 
-**Strategy:** Diff/port from `main` branch `mobile/` screens — not greenfield. Authoritative UX lives in `mobile/src/screens/PickupScreen.tsx` (~1887 lines).
+The legacy Expo `mobile/` prototype was removed; the React PWA is the sole client.
 
-### Ported from `mobile/` → `frontend/`
-- **Pickup wizard** (`PickupPage.tsx` + `LocationQuickSelect.tsx`): 3-step flow (Pickup → Dropoff → Sign stepper label); CSV-derived top-6 quick-select chips with **More...** / **Other** progressive disclosure; `selectedPickupKey` conditional dropoffs; auto-fill from `suggestions.json`; saves at step 2 (mobile parity).
+### Driver pickup / delivery
+- **Pickup wizard** (`PickupPage.tsx` + `LocationQuickSelect.tsx`): 3-step flow (Pickup → Dropoff → Sign stepper label); CSV-derived top-6 quick-select chips with **More...** / **Other** progressive disclosure; `selectedPickupKey` conditional dropoffs; auto-fill from `suggestions.json`; saves at step 2.
+- **Pending dropoff gating** (`pendingDropoff.ts`, `DashboardPage.tsx`, `SignOffPage.tsx`): PICKED_UP waybills with placeholder dropoff (`Pending Dropoff` / `Pending Address`) open pickup wizard step 2 before sign-off or quick delivery confirm.
+- **Pricing** (`pricing.ts`): Bus (ON) dropoff $15; Airport dropoff $75; mirrored in backend + CSV location mapper.
 - **CSV seed pipeline** (`backend/src/utils/archiveCsvImporter.ts`, `csvLocationMapper.ts`): Adapted from `server.js` + `analyze_csv.py`; seeds HIST-* records and writes `frontend/src/data/topPickups.json`.
 - **Waybill list API** (`GET /api/waybills`): RBAC-filtered list; dashboard loads seeded HIST-* + W-001..003.
 - **Sign-off** (`SignOffPage.tsx`): Signature canvas, printed name, POD photo upload to blob queue.
 - **Dispatch dashboard** (`DashboardPage.tsx`): Active/Pending Price/Completed tabs, interactive driver assignment via `WAYBILL_ASSIGNED` events, pending price modal (`DISPATCHER_OVERRIDE` + `pricingTotalCost`), completed search/date filters, rush badges, price column, conflict badges + retry UI.
-- **Accounting** (`AccountingPage.tsx`): Monthly invoice generator + archive list; **Print/View PDF** via browser print (2-page template: statement + itemized waybills, ported from mobile).
+- **Accounting** (`AccountingPage.tsx`): Monthly invoice generator + archive list; **Print/View PDF** via browser print; **Payroll** tab with employee CRUD via `/api/admin/employees`.
+- **Completed waybill actions** (`CompletedWaybillModal.tsx`, `waybillPrint.ts`, `waybillEmail.ts`): Capture icons (✍️/📷) on Completed tab; row click opens detail modal with Print + mailto email to `iaw@iawcourier.com`.
 - **Driver pending pickup**: Dashboard **Pick Up** / row click opens `PickupPage` with `editWaybill` hydration; save emits `WAYBILL_PICKED_UP` (not duplicate `WAYBILL_CREATED`).
 - **Driver action column fix**: Driver list scoped to assigned jobs only (`driverId === session.driverId`); Pick Up button shown for assigned DRAFT/PICKED_UP rows.
 - **Pickup UX**: Delivery "Other" clears to empty with dispatch note placeholder; weight "Enter weight" validates integer &gt; 75 lbs.
 - **SyncManager**: Real S/C counters from IndexedDB; conflict simulation when cargo description contains `"conflict"` or `"fail"`; `resolveConflictForce()` retry.
 - **Backend projector**: Driver unassign (`driverId: null`), manual price on `DISPATCHER_OVERRIDE`, `calculatedPrice` in API serialize.
 
+### Dispatch / driver UX (2026-07-02)
+- **Login**: Removed credential hints and test placeholders from `LoginPage.tsx` (auth unchanged).
+- **Dispatch driver preview**: Read-only "Driver View" toggle in action row; pick a driver to see their filtered queue; "Back to Dispatch" exits preview.
+- **Delete active delivery**: Active Jobs tab — dispatcher can void DRAFT/PICKED_UP via `WAYBILL_VOIDED` event + confirmation modal; RBAC dispatcher-only; voided rows excluded from list API.
+- **Accounting button**: Moved to top action row beside NEW PICKUP and Driver View controls.
+- **Driver completed history**: DELIVERED rows collapsed by default; expandable horizontal section bars for **Today's** / **This week's** / **This month's** completed (each bucket toggles independently).
+- **Dashboard table columns**: Route split into compact Pickup + Dropoff columns; Cargo abbreviated; price in narrow `$` column; dispatch delete icon in dedicated far-right column.
+- **Pickup "Other" fields**: Delivery details and weight range use inline editable "Other" inputs in the picker row (no separate popup field).
+- **Payroll seed**: `seed.ts` upserts `Employee` rows dynamically from all active `Driver` records (names stay in sync with driver roster).
+
+### Dispatch / driver UX fixes (2026-07-02)
+- **Pending Price tab**: Today's + Unassigned collapsible section bars (mirrors driver completed history); auto-rated or stored prices move to Completed tab via `effectiveWaybillPrice`.
+- **Driver pickup assignment**: `driverId` persisted on `WAYBILL_PICKED_UP` projection + driver event API fallback; queued waybill merge preserves creator assignment after sync.
+- **Driver action column**: Sticky right action column + larger touch targets on mobile driver tables.
+
 ### Still deferred (post v1.0.0)
 - QuickBooks Online OAuth + invoice/journal sync
-- Full driver roster impersonation toggle (dispatch ↔ driver view switch)
 - Server-side partial sync conflict indices (F6-T2-01)
 - Tier 2–5 E2E scenarios per `TEST_INFRA.md`
 
@@ -150,18 +167,17 @@ Runs backend Jest (`test:backend`) then Playwright Tier 1 (`test:e2e`).
 
 ---
 
-## 6. Verification Status (2026-07-02 — MVP fixes)
+## 6. Verification Status (2026-07-02 — pending dropoff + pricing)
 
 | Test Category | Status | Command |
 |---|---|---|
 | Backend compile | **PASS** | `npm run build --prefix backend` |
 | Frontend compile | **PASS** | `npm run build --prefix frontend` |
-| Backend integration tests | **PASS** (38/38) | `npm run test` |
+| Backend integration tests | **PASS** | `cd backend && npm run test` |
 | E2E Tier 1 tests | **PASS** (34/34) | `npm run test:e2e` |
-| Full suite | **PASS** (72/72) | `npm test` |
-| Database seed | **PASS** | `npx ts-node backend/src/seed.ts` |
+| Full suite | **PASS** | `npm test` |
 
-**MVP fixes shipped:** invoice PDF print, pending-pickup hydration, driver action button, pickup UX, dual-login tabs/docs, drivers 3–4 in seed + auth.
+**Shipped:** pending-dropoff delivery gating; Bus (ON)/Airport pricing; removed legacy `mobile/` Expo prototype.
 
 ---
 

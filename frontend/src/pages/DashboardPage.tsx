@@ -5,10 +5,11 @@ import { DRIVERS, driverFirstName } from '../data/drivers';
 import type { AuthSession } from '../services/auth';
 import { syncManager, type SyncStats } from '../services/SyncManager';
 import type { Waybill } from '../types/waybill';
-import { waybillPrice } from '../types/waybill';
-import { formatWaybillDate, formatWaybillTime } from '../utils/formatters';
-import { calculatePrice, getLocationShortName } from '../utils/pricing';
+import { formatWaybillDate, formatWaybillTime, abbreviateCargo } from '../utils/formatters';
+import { getLocationShortName } from '../utils/pricing';
 import { mergeQueuedWaybills } from '../utils/queuedWaybills';
+import { groupCompletedDeliveries, groupPendingPriceWaybills, type CompletedBucket, type PendingPriceBucket } from '../utils/completedDeliveries';
+import { effectiveWaybillPrice, isCompletedPricedDelivery, isPendingDispatcherPrice } from '../utils/waybillPricing';
 import {
   isRushTierWaybill,
   priorityBadgeLabel,
@@ -16,6 +17,8 @@ import {
   sortDriverDeliveryQueue,
 } from '../utils/waybillSort';
 import { APP_BUILD } from '../config/appBuild';
+import CompletedWaybillModal from '../components/CompletedWaybillModal';
+import { hasPendingDropoff } from '../utils/pendingDropoff';
 
 export type { Waybill };
 
@@ -105,6 +108,20 @@ function statusLabel(status: string): string {
 }
 
 /**
+ * Returns true when the waybill has a captured electronic signature.
+ */
+function hasSignature(wb: Waybill): boolean {
+  return Boolean(wb.signatureImageUrl || wb.signatureName);
+}
+
+/**
+ * Returns true when the waybill has a proof-of-delivery photo.
+ */
+function hasProofPhoto(wb: Waybill): boolean {
+  return Boolean(wb.proofPhotoUrl);
+}
+
+/**
  * Driver and dispatcher dashboard with tabular waybill views and sync counters.
  */
 export default function DashboardPage({
@@ -120,17 +137,30 @@ export default function DashboardPage({
 }: DashboardProps) {
   const [waybills, setWaybills] = useState<Waybill[]>([]);
   const [dispatchTab, setDispatchTab] = useState<DispatchTab>('ACTIVE');
-  const [showDriverRoster, setShowDriverRoster] = useState(true);
   const [completedSearchQuery, setCompletedSearchQuery] = useState('');
   const [completedStartDate, setCompletedStartDate] = useState('');
   const [completedEndDate, setCompletedEndDate] = useState('');
+  const [completedDetailWaybill, setCompletedDetailWaybill] = useState<Waybill | null>(null);
   const [pendingPriceWaybill, setPendingPriceWaybill] = useState<Waybill | null>(null);
   const [deliverConfirmWaybill, setDeliverConfirmWaybill] = useState<Waybill | null>(null);
   const [quotePrice, setQuotePrice] = useState('');
   const [conflictEvents, setConflictEvents] = useState<Array<{ id: string; waybillNumber: string }>>([]);
   const [assignModalWaybill, setAssignModalWaybill] = useState<Waybill | null>(null);
   const [assignDraft, setAssignDraft] = useState<AssignmentDraft | null>(null);
+  const [driverPreviewId, setDriverPreviewId] = useState<string | null>(null);
+  const [showDriverPicker, setShowDriverPicker] = useState(false);
+  const [completedExpandedBuckets, setCompletedExpandedBuckets] = useState<Set<CompletedBucket>>(
+    new Set()
+  );
+  const [pendingPriceExpandedBuckets, setPendingPriceExpandedBuckets] = useState<Set<PendingPriceBucket>>(
+    new Set(['today', 'unassigned'])
+  );
+  const [deleteConfirmWaybill, setDeleteConfirmWaybill] = useState<Waybill | null>(null);
   const isDispatcher = session.role === 'DISPATCHER';
+  const isDriverPreview = isDispatcher && driverPreviewId !== null;
+  const showDriverPortal = !isDispatcher || isDriverPreview;
+  const hideDriverPricing = session.role === 'DRIVER';
+  const previewDriverName = driverPreviewId ? driverFirstName(driverPreviewId) : null;
 
   useEffect(() => {
     syncManager.refresh();
@@ -357,12 +387,19 @@ export default function DashboardPage({
 
     setPendingPriceWaybill(null);
     setQuotePrice('');
+    setDispatchTab('COMPLETED');
   };
 
   /**
    * Marks a non-POD waybill delivered after driver confirmation (no signature required).
    */
   const handleConfirmDelivery = async (wb: Waybill) => {
+    if (hasPendingDropoff(wb)) {
+      setDeliverConfirmWaybill(null);
+      onContinuePickup(wb);
+      return;
+    }
+
     const eventId = crypto.randomUUID();
     const deliveredAt = new Date().toISOString();
 
@@ -411,12 +448,13 @@ export default function DashboardPage({
    * Routes a driver row action to pickup, POD sign-off, or quick delivery confirmation.
    */
   const handleDriverAction = (wb: Waybill) => {
-    const needsPod = wb.podRequired === true || wb.additionalComments === '__podRequired';
-
-    if (wb.status === 'DRAFT') {
+    if (wb.status === 'DRAFT' || (wb.status === 'PICKED_UP' && hasPendingDropoff(wb))) {
       onContinuePickup(wb);
       return;
     }
+
+    const needsPod = wb.podRequired === true || wb.additionalComments === '__podRequired';
+
     if (wb.status === 'PICKED_UP') {
       if (needsPod) {
         onSignOff(wb);
@@ -426,18 +464,23 @@ export default function DashboardPage({
     }
   };
 
-  const isAssignedToMe = (wb: Waybill): boolean => {
-    if (!session.driverId) return false;
-    return wb.driverId === session.driverId;
+  const isAssignedToMe = (wb: Waybill, driverId?: string | null): boolean => {
+    const targetDriverId = driverId ?? session.driverId;
+    if (!targetDriverId) return false;
+    return wb.driverId === targetDriverId;
   };
 
   const scopedWaybills = useMemo(() => {
-    if (isDispatcher) return waybills;
-    return waybills.filter((w) => isAssignedToMe(w));
-  }, [isDispatcher, session.driverId, waybills]);
+    const live = waybills.filter((w) => w.status !== 'VOIDED');
+    if (isDriverPreview && driverPreviewId) {
+      return live.filter((w) => w.driverId === driverPreviewId);
+    }
+    if (isDispatcher) return live;
+    return live.filter((w) => isAssignedToMe(w));
+  }, [driverPreviewId, isDispatcher, isDriverPreview, session.driverId, waybills]);
 
   const visibleWaybills = useMemo(() => {
-    if (!isDispatcher) {
+    if (showDriverPortal) {
       return sortDriverDeliveryQueue(
         scopedWaybills.filter(
           (w) => w.status === 'DRAFT' || w.status === 'PICKED_UP' || w.status === 'DELIVERED'
@@ -446,7 +489,7 @@ export default function DashboardPage({
     }
 
     if (dispatchTab === 'COMPLETED') {
-      let list = scopedWaybills.filter((w) => w.status === 'DELIVERED' && waybillPrice(w) > 0);
+      let list = scopedWaybills.filter(isCompletedPricedDelivery);
 
       if (completedSearchQuery.trim()) {
         const q = completedSearchQuery.toLowerCase().trim();
@@ -484,7 +527,7 @@ export default function DashboardPage({
     }
 
     if (dispatchTab === 'PENDING_PRICE') {
-      return scopedWaybills.filter((w) => w.status === 'DELIVERED' && waybillPrice(w) <= 0);
+      return scopedWaybills.filter(isPendingDispatcherPrice);
     }
 
     return sortDispatchActiveWaybills(
@@ -497,7 +540,41 @@ export default function DashboardPage({
     dispatchTab,
     isDispatcher,
     scopedWaybills,
+    showDriverPortal,
   ]);
+
+  const driverActiveWaybills = useMemo(() => {
+    if (!showDriverPortal) return [];
+    return sortDriverDeliveryQueue(
+      scopedWaybills.filter((w) => w.status === 'DRAFT' || w.status === 'PICKED_UP')
+    );
+  }, [scopedWaybills, showDriverPortal]);
+
+  const driverCompletedGroups = useMemo(() => {
+    if (!showDriverPortal) return [];
+    const completed = sortDriverDeliveryQueue(scopedWaybills.filter((w) => w.status === 'DELIVERED'));
+    return groupCompletedDeliveries(completed);
+  }, [scopedWaybills, showDriverPortal]);
+
+  const driverCompletedCount = useMemo(
+    () => driverCompletedGroups.reduce((sum, group) => sum + group.items.length, 0),
+    [driverCompletedGroups]
+  );
+
+  const pendingPriceGroups = useMemo(() => {
+    if (!isDispatcher || isDriverPreview || dispatchTab !== 'PENDING_PRICE') return [];
+    return groupPendingPriceWaybills(scopedWaybills);
+  }, [dispatchTab, isDispatcher, isDriverPreview, scopedWaybills]);
+
+  const pendingPriceCount = useMemo(
+    () => scopedWaybills.filter(isPendingDispatcherPrice).length,
+    [scopedWaybills]
+  );
+
+  const completedPricedCount = useMemo(
+    () => scopedWaybills.filter(isCompletedPricedDelivery).length,
+    [scopedWaybills]
+  );
 
   const conflictWaybillNumbers = new Set(conflictEvents.map((e) => e.waybillNumber));
 
@@ -513,16 +590,265 @@ export default function DashboardPage({
     );
   }, [assignDraft, assignModalWaybill, waybills]);
 
+  /**
+   * Voids an active waybill after dispatcher confirmation (DRAFT or PICKED_UP only).
+   */
+  const handleConfirmDelete = async (wb: Waybill) => {
+    if (!isDispatcher || isDriverPreview) return;
+
+    try {
+      const res = await fetch(`/api/waybills/${wb.waybillNumber}/events`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.token}`,
+        },
+        body: JSON.stringify({
+          eventType: 'WAYBILL_VOIDED',
+          data: {},
+        }),
+      });
+
+      if (!res.ok) {
+        await loadWaybills();
+        setDeleteConfirmWaybill(null);
+        return;
+      }
+
+      setWaybills((prev) => {
+        const next = prev.filter((row) => row.waybillNumber !== wb.waybillNumber);
+        sessionStorage.setItem('iaw_waybills', JSON.stringify(next));
+        return next;
+      });
+    } catch {
+      await loadWaybills();
+    }
+
+    setDeleteConfirmWaybill(null);
+  };
+
   const assignDriverName = DRIVERS.find((d) => d.id === assignDraft?.driverId)?.firstName ?? 'Driver';
+
+  const showDispatchDeleteCol =
+    isDispatcher && !isDriverPreview && dispatchTab === 'ACTIVE';
+
+  /**
+   * Toggles expansion for a completed-delivery time bucket in the driver view.
+   */
+  const toggleCompletedBucket = (bucket: CompletedBucket) => {
+    setCompletedExpandedBuckets((prev) => {
+      const next = new Set(prev);
+      if (next.has(bucket)) {
+        next.delete(bucket);
+      } else {
+        next.add(bucket);
+      }
+      return next;
+    });
+  };
+
+  /**
+   * Toggles expansion for a pending-price time bucket in the dispatch view.
+   */
+  const togglePendingPriceBucket = (bucket: PendingPriceBucket) => {
+    setPendingPriceExpandedBuckets((prev) => {
+      const next = new Set(prev);
+      if (next.has(bucket)) {
+        next.delete(bucket);
+      } else {
+        next.add(bucket);
+      }
+      return next;
+    });
+  };
+
+  /**
+   * Renders waybill table column headers for dispatch and driver portal views.
+   */
+  const renderTableHeader = (opts: {
+    showCapture?: boolean;
+    actionLabel?: string;
+    showDelete?: boolean;
+    hidePrice?: boolean;
+  }) => (
+    <thead>
+      <tr>
+        <th>Waybill</th>
+        <th>Date</th>
+        <th>Time</th>
+        <th className="col-cargo">Cargo</th>
+        <th className="col-pickup">Pickup</th>
+        <th className="col-dropoff">Dropoff</th>
+        {!opts.hidePrice && <th className="col-price">$</th>}
+        <th>Status</th>
+        {opts.showCapture && <th>Capture</th>}
+        <th className="col-action">{opts.actionLabel ?? 'Action'}</th>
+        {opts.showDelete && (
+          <th className="col-delete" aria-label="Delete">
+            {' '}
+          </th>
+        )}
+      </tr>
+    </thead>
+  );
+
+  /**
+   * Renders a single waybill table row for dispatch or driver portal views.
+   */
+  const renderWaybillRow = (wb: Waybill, readOnly = false) => {
+    const price = effectiveWaybillPrice(wb);
+    const timestamp = wb.capturedAt ?? wb.createdAt;
+    const hasConflict = conflictWaybillNumbers.has(wb.waybillNumber);
+    const previewDriverId = isDriverPreview ? driverPreviewId : session.driverId;
+    const showDriverAction =
+      showDriverPortal &&
+      !readOnly &&
+      isAssignedToMe(wb, previewDriverId) &&
+      (wb.status === 'DRAFT' || wb.status === 'PICKED_UP');
+    const canDelete =
+      isDispatcher &&
+      !isDriverPreview &&
+      dispatchTab === 'ACTIVE' &&
+      (wb.status === 'DRAFT' || wb.status === 'PICKED_UP');
+
+    return (
+      <tr
+        key={wb.waybillNumber}
+        className={hasConflict ? 'row-conflict' : undefined}
+        onClick={() => {
+          if (isDispatcher && !isDriverPreview && dispatchTab === 'COMPLETED') {
+            setCompletedDetailWaybill(wb);
+            return;
+          }
+          if (isDispatcher && !isDriverPreview && dispatchTab === 'PENDING_PRICE') {
+            setPendingPriceWaybill(wb);
+            setQuotePrice('');
+            return;
+          }
+          if (showDriverAction) {
+            handleDriverAction(wb);
+          }
+        }}
+      >
+        <td>
+          <div className="table-waybill">{wb.waybillNumber}</div>
+          {wb.externalSource === 'google_sheet' && !hideDriverPricing && (
+            <span className="form-intake-badge">LIVE FORM</span>
+          )}
+          {priorityBadgeLabel(wb) && (
+            <div className="priority-badges">
+              <span className="rush-badge">{priorityBadgeLabel(wb)}</span>
+            </div>
+          )}
+          {hasConflict && <span className="conflict-badge">CONFLICT</span>}
+        </td>
+        <td>{formatWaybillDate(timestamp)}</td>
+        <td>{formatWaybillTime(timestamp)}</td>
+        <td className="col-cargo" title={wb.parcelDescription}>
+          {abbreviateCargo(wb.parcelDescription)}
+        </td>
+        <td className="col-pickup" title={wb.pickupLocationName}>
+          {getLocationShortName(wb.pickupLocationName)}
+        </td>
+        <td className="col-dropoff" title={wb.dropoffDestinationName}>
+          {getLocationShortName(wb.dropoffDestinationName)}
+        </td>
+        {!hideDriverPricing && (
+          <td className="col-price">{price > 0 ? `$${price.toFixed(0)}` : '—'}</td>
+        )}
+        <td>
+          <span className={`status-tag status-${wb.status.toLowerCase()}`}>
+            {statusLabel(wb.status)}
+          </span>
+        </td>
+        {isDispatcher && !isDriverPreview && dispatchTab === 'COMPLETED' && (
+          <td>
+            <div className="capture-icons" aria-label="Capture status">
+              {hasSignature(wb) && (
+                <span className="capture-icon" title="Signature captured">
+                  ✍️
+                </span>
+              )}
+              {hasProofPhoto(wb) && (
+                <span className="capture-icon" title="Proof photo captured">
+                  📷
+                </span>
+              )}
+              {!hasSignature(wb) && !hasProofPhoto(wb) && (
+                <span className="capture-icon muted" title="No captures">
+                  —
+                </span>
+              )}
+            </div>
+          </td>
+        )}
+        <td
+          className="col-action"
+          onClick={(e) => {
+            if (isDispatcher && !isDriverPreview) e.stopPropagation();
+          }}
+        >
+          {isDispatcher && !isDriverPreview ? (
+            <DispatchAssignmentCell
+              wb={wb}
+              onAssignClick={(driverId) => openAssignModal(wb, driverId)}
+            />
+          ) : showDriverAction ? (
+            <button
+              type="button"
+              className="action-badge-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDriverAction(wb);
+              }}
+            >
+              {wb.status === 'DRAFT'
+                ? 'Pick Up'
+                : wb.podRequired || wb.additionalComments === '__podRequired'
+                  ? 'Deliver w/ POD'
+                  : 'Deliver'}
+            </button>
+          ) : readOnly && wb.status === 'DELIVERED' ? (
+            <span className="driver-readonly-label">Completed</span>
+          ) : null}
+        </td>
+        {showDispatchDeleteCol && (
+          <td
+            className="col-delete"
+            onClick={(e) => {
+              e.stopPropagation();
+            }}
+          >
+            {canDelete && (
+              <button
+                type="button"
+                className="btn-delete-waybill"
+                title="Delete waybill"
+                aria-label={`Delete ${wb.waybillNumber}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDeleteConfirmWaybill(wb);
+                }}
+              >
+                🗑
+              </button>
+            )}
+          </td>
+        )}
+      </tr>
+    );
+  };
 
   return (
     <div className="dashboard">
       <header className="dashboard-header">
         <div className="header-left">
-          {isDispatcher ? (
+          {isDriverPreview ? (
+            <span className="driver-title">{previewDriverName}&apos;s View (read-only)</span>
+          ) : isDispatcher ? (
             <span className="dispatch-title">⚙️ Dispatch <span className="build-stamp">{APP_BUILD}</span></span>
           ) : (
-            <span className="driver-title">Driver Portal</span>
+            <span className="driver-title">Driver Portal <span className="build-stamp">{APP_BUILD}</span></span>
           )}
         </div>
 
@@ -573,13 +899,51 @@ export default function DashboardPage({
         </button>
 
         {isDispatcher && (
-          <button type="button" className="btn-accounting" onClick={onOpenAccounting}>
-            📊 ACCOUNTING & INVOICES
-          </button>
+          <>
+            {isDriverPreview ? (
+              <button
+                type="button"
+                className="btn-driver-preview active"
+                onClick={() => setDriverPreviewId(null)}
+              >
+                ← Back to Dispatch
+              </button>
+            ) : (
+              <div className="driver-preview-wrap">
+                <button
+                  type="button"
+                  className="btn-driver-preview"
+                  onClick={() => setShowDriverPicker((open) => !open)}
+                >
+                  👤 Driver View
+                </button>
+                {showDriverPicker && (
+                  <div className="driver-preview-menu">
+                    {DRIVERS.map((driver) => (
+                      <button
+                        key={driver.id}
+                        type="button"
+                        onClick={() => {
+                          setDriverPreviewId(driver.id);
+                          setShowDriverPicker(false);
+                        }}
+                      >
+                        {driver.firstName} {driver.lastName[0]}.
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <button type="button" className="btn-accounting" onClick={onOpenAccounting}>
+              📊 ACCOUNTING & INVOICES
+            </button>
+          </>
         )}
       </div>
 
-      {isDispatcher && (
+      {isDispatcher && !isDriverPreview && (
         <div className="dispatch-tabs">
           {(['ACTIVE', 'PENDING_PRICE', 'COMPLETED'] as const).map((tab) => (
             <button
@@ -588,13 +952,17 @@ export default function DashboardPage({
               className={dispatchTab === tab ? 'dispatch-tab active' : 'dispatch-tab'}
               onClick={() => setDispatchTab(tab)}
             >
-              {tab === 'ACTIVE' ? 'Active Jobs' : tab === 'PENDING_PRICE' ? 'Pending Price' : 'Completed'}
+              {tab === 'ACTIVE'
+                ? 'Active Jobs'
+                : tab === 'PENDING_PRICE'
+                  ? `Pending Price (${pendingPriceCount})`
+                  : `Completed (${completedPricedCount})`}
             </button>
           ))}
         </div>
       )}
 
-      {isDispatcher && dispatchTab === 'COMPLETED' && (
+      {isDispatcher && !isDriverPreview && dispatchTab === 'COMPLETED' && (
         <div className="completed-filters">
           <input
             className="search-input"
@@ -638,127 +1006,99 @@ export default function DashboardPage({
         </div>
       )}
 
-      <div className="waybill-table-wrap">
-        <table className="waybill-table">
-          <thead>
-            <tr>
-              <th>Waybill</th>
-              <th>Date</th>
-              <th>Time</th>
-              <th>Cargo</th>
-              <th>Route</th>
-              <th>Status</th>
-              {isDispatcher ? <th>Assignment</th> : <th>Action</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {visibleWaybills.map((wb) => {
-              const quote = calculatePrice(
-                wb.pickupLocationName,
-                wb.dropoffDestinationName,
-                undefined,
-                false,
-                wb.priority
-              );
-              const price = waybillPrice(wb) || quote.price;
-              const timestamp = wb.capturedAt ?? wb.createdAt;
-              const hasConflict = conflictWaybillNumbers.has(wb.waybillNumber);
-              const isCompleted = wb.status === 'DELIVERED';
-              const showDriverAction =
-                !isDispatcher && isAssignedToMe(wb) && (wb.status === 'DRAFT' || wb.status === 'PICKED_UP');
+      {showDriverPortal ? (
+        <>
+          <div className="waybill-table-wrap">
+            <table className="waybill-table driver-portal-table">
+              {renderTableHeader({ actionLabel: 'Action', hidePrice: hideDriverPricing })}
+              <tbody>{driverActiveWaybills.map((wb) => renderWaybillRow(wb, isDriverPreview))}</tbody>
+            </table>
+          </div>
 
-              return (
-                <tr
-                  key={wb.waybillNumber}
-                  className={hasConflict ? 'row-conflict' : undefined}
-                  onClick={() => {
-                    if (isDispatcher && dispatchTab === 'PENDING_PRICE') {
-                      setPendingPriceWaybill(wb);
-                      setQuotePrice('');
-                      return;
-                    }
-                    if (showDriverAction) {
-                      handleDriverAction(wb);
-                    }
-                  }}
-                >
-                  <td>
-                    <div className="table-waybill">{wb.waybillNumber}</div>
-                    {wb.externalSource === 'google_sheet' && (
-                      <span className="form-intake-badge">LIVE FORM</span>
-                    )}
-                    {priorityBadgeLabel(wb) && (
-                      <div className="priority-badges">
-                        <span className="rush-badge">{priorityBadgeLabel(wb)}</span>
+          {driverCompletedCount > 0 && (
+            <div className="completed-deliveries-section">
+              {driverCompletedGroups.map((group) => {
+                const isOpen = completedExpandedBuckets.has(group.bucket);
+                return (
+                  <div key={group.bucket} className="completed-deliveries-group">
+                    <button
+                      type="button"
+                      className="completed-deliveries-bar"
+                      onClick={() => toggleCompletedBucket(group.bucket)}
+                    >
+                      <span className="completed-deliveries-bar-label">
+                        {isOpen ? '▼' : '▶'} {group.label} completed
+                      </span>
+                      <span className="completed-deliveries-bar-count">{group.items.length}</span>
+                    </button>
+
+                    {isOpen && (
+                      <div className="waybill-table-wrap completed-deliveries-table">
+                        <table className="waybill-table driver-portal-table">
+                          {renderTableHeader({ actionLabel: 'Action', hidePrice: hideDriverPricing })}
+                          <tbody>
+                            {group.items.map((wb) => renderWaybillRow(wb, true))}
+                          </tbody>
+                        </table>
                       </div>
                     )}
-                    {hasConflict && <span className="conflict-badge">CONFLICT</span>}
-                  </td>
-                  <td>{formatWaybillDate(timestamp)}</td>
-                  <td>{formatWaybillTime(timestamp)}</td>
-                  <td>{wb.parcelDescription}</td>
-                  <td>
-                    <div className="route">
-                      🚩 {getLocationShortName(wb.pickupLocationName)} ➡️{' '}
-                      {getLocationShortName(wb.dropoffDestinationName)}
-                    </div>
-                    <div className="route-price">{price > 0 ? `$${price.toFixed(2)}` : 'Manual'}</div>
-                  </td>
-                  <td>
-                    <span className={`status-tag status-${wb.status.toLowerCase()}`}>
-                      {statusLabel(wb.status)}
-                    </span>
-                  </td>
-                  <td
-                    onClick={(e) => {
-                      if (isDispatcher) e.stopPropagation();
-                    }}
-                  >
-                    {isDispatcher ? (
-                      <DispatchAssignmentCell
-                        wb={wb}
-                        onAssignClick={(driverId) => openAssignModal(wb, driverId)}
-                      />
-                    ) : showDriverAction ? (
-                        <button
-                          type="button"
-                          className="action-badge-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDriverAction(wb);
-                          }}
-                        >
-                          {wb.status === 'DRAFT'
-                            ? 'Pick Up'
-                            : wb.podRequired || wb.additionalComments === '__podRequired'
-                              ? 'Deliver w/ POD'
-                              : 'Deliver'}
-                        </button>
-                      ) : null}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      ) : isDispatcher && !isDriverPreview && dispatchTab === 'PENDING_PRICE' ? (
+        <div className="completed-deliveries-section pending-price-section">
+          {pendingPriceGroups.map((group) => {
+            const isOpen = pendingPriceExpandedBuckets.has(group.bucket);
+            return (
+              <div key={group.bucket} className="completed-deliveries-group">
+                <button
+                  type="button"
+                  className="completed-deliveries-bar"
+                  onClick={() => togglePendingPriceBucket(group.bucket)}
+                >
+                  <span className="completed-deliveries-bar-label">
+                    {isOpen ? '▼' : '▶'} {group.label} — pending price
+                  </span>
+                  <span className="completed-deliveries-bar-count">{group.items.length}</span>
+                </button>
 
-      {isDispatcher && (
-        <div className="driver-roster">
-          <button
-            type="button"
-            className="roster-toggle"
-            onClick={() => setShowDriverRoster((v) => !v)}
-          >
-            {showDriverRoster ? '▼' : '▶'} Drivers
-          </button>
-          {showDriverRoster &&
-            DRIVERS.map((driver) => (
-              <span key={driver.id} className="driver-chip">
-                {driver.firstName} {driver.lastName[0]}.
-              </span>
-            ))}
+                {isOpen && (
+                  <div className="waybill-table-wrap completed-deliveries-table">
+                    {group.items.length > 0 ? (
+                      <table className="waybill-table">
+                        {renderTableHeader({ actionLabel: 'Assignment' })}
+                        <tbody>{group.items.map((wb) => renderWaybillRow(wb))}</tbody>
+                      </table>
+                    ) : (
+                      <p className="empty-text pending-price-empty">No deliveries in this section.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
+      ) : (
+        <div className="waybill-table-wrap">
+          <table className="waybill-table">
+            {renderTableHeader({
+              showCapture: isDispatcher && !isDriverPreview && dispatchTab === 'COMPLETED',
+              actionLabel: 'Assignment',
+              showDelete: showDispatchDeleteCol,
+            })}
+            <tbody>{visibleWaybills.map((wb) => renderWaybillRow(wb))}</tbody>
+          </table>
+        </div>
+      )}
+
+      {completedDetailWaybill && (
+        <CompletedWaybillModal
+          waybill={completedDetailWaybill}
+          onClose={() => setCompletedDetailWaybill(null)}
+        />
       )}
 
       {deliverConfirmWaybill && (
@@ -914,6 +1254,41 @@ export default function DashboardPage({
                 onClick={() => void handleConfirmQuotePrice()}
               >
                 Confirm Price
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteConfirmWaybill && (
+        <div className="modal-overlay">
+          <div className="modal-content delete-confirm-modal">
+            <h3>Delete Active Delivery?</h3>
+            <div className="modal-details">
+              <div>Waybill #: {deleteConfirmWaybill.waybillNumber}</div>
+              <div>
+                Route: {getLocationShortName(deleteConfirmWaybill.pickupLocationName)} ➡️{' '}
+                {getLocationShortName(deleteConfirmWaybill.dropoffDestinationName)}
+              </div>
+              <div>Status: {statusLabel(deleteConfirmWaybill.status)}</div>
+            </div>
+            <p className="delete-confirm-note">
+              This will void the waybill and remove it from active jobs. This action cannot be undone.
+            </p>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setDeleteConfirmWaybill(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-danger"
+                onClick={() => void handleConfirmDelete(deleteConfirmWaybill)}
+              >
+                Delete Waybill
               </button>
             </div>
           </div>

@@ -1,7 +1,7 @@
 /** Synthetic driver roster used for dispatch assignment chips and table labels. */
 export const DRIVERS = [
   { id: 'drv-01', firstName: 'Shawn', lastName: 'McKenzie', qboDriverId: '101' },
-  { id: 'drv-02', firstName: 'John', lastName: 'Doe', qboDriverId: '102' },
+  { id: 'drv-02', firstName: 'Driver', lastName: 'Two', qboDriverId: '102' },
   { id: 'drv-03', firstName: 'Sarah', lastName: 'Connor', qboDriverId: '103' },
   { id: 'drv-04', firstName: 'Alex', lastName: 'Mercer', qboDriverId: '104' },
 ] as const;

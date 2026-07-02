@@ -1,6 +1,6 @@
 {
   "name": "iaw-saas-backend",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "IAW Courier SaaS Backend",
   "main": "dist/server.js",
   "scripts": {
@@ -11,6 +11,8 @@
     "seed:prod": "node dist/seed.js",
     "reseed:archive": "ts-node src/runArchiveReseed.ts",
     "reseed:archive:prod": "node dist/runArchiveReseed.js",
+    "restore:deliveries": "ts-node src/restoreDeliveryData.ts",
+    "restore:deliveries:prod": "node dist/restoreDeliveryData.js",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "test": "jest --runInBand --detectOpenHandles"

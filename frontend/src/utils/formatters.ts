@@ -21,3 +21,17 @@ export function formatWaybillTime(isoString?: string | null): string {
   if (Number.isNaN(date.getTime())) return 'N/A';
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
+
+/**
+ * Returns a compact cargo label for narrow dashboard table columns.
+ */
+export function abbreviateCargo(description: string): string {
+  const trimmed = description.trim();
+  if (!trimmed) return '—';
+  if (trimmed === 'Standard Package') return 'Std pkg';
+  const weightMatch = trimmed.match(/^Weight:\s*(\d+)\s*lbs?$/i);
+  if (weightMatch) return `${weightMatch[1]} lb`;
+  if (/^Weight:\s*Under\s*75/i.test(trimmed)) return '<75 lb';
+  if (trimmed.length <= 12) return trimmed;
+  return `${trimmed.slice(0, 10)}…`;
+}

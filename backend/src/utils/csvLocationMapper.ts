@@ -3,11 +3,13 @@
  */
 export const VERIFIED_BUSINESSES = [
   'ALS Environmental',
+  'Airport',
   'Anmar',
   'B&D Manufacturing',
   'BDI Canada Inc.',
   'Bélanger Construction',
   'Brankor Trophies',
+  'Bus (ON)',
   'Bull Power',
   'Consbec',
   'CRD (Creighton Rock Drill)',
@@ -73,11 +75,23 @@ export function mapToVerifiedConfident(rawName: string | undefined | null): stri
   }
 
   if (name.includes('als')) return 'ALS Environmental';
+  if (name.includes('airport')) return 'Airport';
   if (name.includes('anmar')) return 'Anmar';
   if (name.includes('b&d') || name.includes('b & d') || name.includes('b and d')) return 'B&D Manufacturing';
   if (name.includes('bdi')) return 'BDI Canada Inc.';
   if (name.includes('belanger') || name.includes('bélanger')) return 'Bélanger Construction';
   if (name.includes('brankor') || name.includes('brancore')) return 'Brankor Trophies';
+  if (
+    name.includes('bus (on)') ||
+    name.includes('ontario northland') ||
+    name.includes('northland bus') ||
+    name === 'bus' ||
+    name === 'bus depot' ||
+    name.includes('greyhound bus') ||
+    name.includes('bus ontario northland')
+  ) {
+    return 'Bus (ON)';
+  }
   if (name.includes('bull power')) return 'Bull Power';
   if (name.includes('consbec')) return 'Consbec';
   if (name.includes('crd') || name.includes('creighton')) return 'CRD (Creighton Rock Drill)';

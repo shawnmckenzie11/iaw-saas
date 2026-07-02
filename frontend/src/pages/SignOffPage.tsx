@@ -4,6 +4,7 @@ import type { AuthSession } from '../services/auth';
 import { syncManager } from '../services/SyncManager';
 import type { Waybill } from '../types/waybill';
 import { getLocationShortName } from '../utils/pricing';
+import { hasPendingDropoff } from '../utils/pendingDropoff';
 
 interface SignOffPageProps {
   waybill: Waybill;
@@ -102,6 +103,11 @@ export default function SignOffPage({ waybill, session, isOnline, onBack }: Sign
 
   const handleComplete = async (e: FormEvent) => {
     e.preventDefault();
+    if (hasPendingDropoff(waybill)) {
+      onBack();
+      return;
+    }
+
     const eventId = crypto.randomUUID();
     const deliveredAt = new Date().toISOString();
 
@@ -153,6 +159,23 @@ export default function SignOffPage({ waybill, session, isOnline, onBack }: Sign
 
     onBack();
   };
+
+  if (hasPendingDropoff(waybill)) {
+    return (
+      <div className="form-page signoff-page">
+        <button type="button" className="back-btn" onClick={onBack}>
+          ← Back
+        </button>
+        <h2>Dropoff Required — {waybill.waybillNumber}</h2>
+        <p className="signoff-route">
+          Set a real dropoff location and address before completing delivery sign-off.
+        </p>
+        <button type="button" className="btn-primary" onClick={onBack}>
+          Back to Dashboard
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="form-page signoff-page">

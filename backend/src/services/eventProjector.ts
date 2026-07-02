@@ -1,4 +1,5 @@
 import { DeliveryRecord, DeliveryStatus, Prisma } from '@prisma/client';
+import { calculatePrice } from '../utils/pricing';
 
 /** Valid status progression for waybill lifecycle events. */
 const VALID_TRANSITIONS: Record<string, DeliveryStatus[]> = {
@@ -6,6 +7,7 @@ const VALID_TRANSITIONS: Record<string, DeliveryStatus[]> = {
   WAYBILL_ASSIGNED: ['DRAFT', 'PICKED_UP'],
   WAYBILL_PICKED_UP: ['DRAFT', 'PICKED_UP'],
   WAYBILL_DELIVERED: ['PICKED_UP', 'DELIVERED'],
+  WAYBILL_VOIDED: ['DRAFT', 'PICKED_UP'],
   DISPATCHER_OVERRIDE: ['DRAFT', 'PICKED_UP', 'DELIVERED', 'INVOICED'],
   DISPATCHER_CORRECTION: ['DRAFT', 'PICKED_UP', 'DELIVERED', 'INVOICED'],
 };
@@ -40,6 +42,15 @@ export function validateStatusTransition(
       valid: false,
       error: 'Invalid status transition: cannot pick up a delivered waybill',
     };
+  }
+
+  if (eventType === 'WAYBILL_VOIDED') {
+    if (currentStatus !== 'DRAFT' && currentStatus !== 'PICKED_UP') {
+      return {
+        valid: false,
+        error: 'Invalid status transition: WAYBILL_VOIDED requires DRAFT or PICKED_UP state',
+      };
+    }
   }
 
   return { valid: true };
@@ -89,6 +100,9 @@ export function projectEventOntoRecord(
       break;
     case 'WAYBILL_PICKED_UP':
       update.status = 'PICKED_UP';
+      if (typeof data.driverId === 'string' && record.driverId === null) {
+        update.driver = { connect: { id: data.driverId } };
+      }
       if (typeof data.pickedUpAt === 'string') {
         update.capturedAt = new Date(data.pickedUpAt);
       }
@@ -145,6 +159,31 @@ export function projectEventOntoRecord(
       if (typeof data.signatureName === 'string') {
         update.signatureName = data.signatureName;
       }
+      if (Number(record.pricingTotalCost) <= 0) {
+        const pickup =
+          typeof data.pickupLocationName === 'string'
+            ? data.pickupLocationName
+            : record.pickupLocationName;
+        const dropoff =
+          typeof data.dropoffDestinationName === 'string'
+            ? data.dropoffDestinationName
+            : record.dropoffDestinationName;
+        const weightClass =
+          typeof data.parcelWeightClass === 'string'
+            ? data.parcelWeightClass
+            : record.parcelWeightClass ?? undefined;
+        const priority = (
+          typeof data.priority === 'string' ? data.priority : record.priority
+        ) as 'REGULAR' | 'RUSH';
+        const quote = calculatePrice(pickup, dropoff, weightClass, false, priority);
+        if (!quote.isManual && quote.price > 0) {
+          update.pricingTotalCost = quote.price;
+          update.pricingIsManuallyAdjusted = false;
+        }
+      }
+      break;
+    case 'WAYBILL_VOIDED':
+      update.status = 'VOIDED';
       break;
     case 'DISPATCHER_OVERRIDE':
       if (typeof data.status === 'string') {
@@ -195,6 +234,8 @@ export function serializeWaybill(record: DeliveryRecord) {
     deliveredAt: record.deliveredAt?.toISOString() ?? null,
     signatureName: record.signatureName,
     signatureImageUrl: record.signatureImageUrl,
+    proofPhotoUrl: record.proofPhotoUrl,
+    signedAt: record.signedAt?.toISOString() ?? null,
     additionalComments: record.additionalComments,
     podRequired: record.additionalComments === '__podRequired',
     externalSource: record.externalSource,
