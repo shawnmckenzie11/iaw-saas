@@ -480,11 +480,29 @@ export default function AccountingScreen({ onNavigateBack }: AccountingScreenPro
       </html>
     `;
 
-    try {
-      const { uri } = await Print.printToFileAsync({ html: htmlContent });
-      await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Invoice_${invoice.invoiceNumber}` });
-    } catch (e: any) {
-      Alert.alert('PDF Print Failed', e.message);
+    if (Platform.OS === 'web') {
+      try {
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+          printWindow.document.write(htmlContent);
+          printWindow.document.close();
+          printWindow.focus();
+          setTimeout(() => {
+            printWindow.print();
+          }, 300);
+        } else {
+          Alert.alert('Popup Blocked', 'Please allow popups to view and print invoices.');
+        }
+      } catch (err: any) {
+        Alert.alert('Print Failed', err.message);
+      }
+    } else {
+      try {
+        const { uri } = await Print.printToFileAsync({ html: htmlContent });
+        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Invoice_${invoice.invoiceNumber}` });
+      } catch (e: any) {
+        Alert.alert('PDF Print Failed', e.message);
+      }
     }
   };
 
