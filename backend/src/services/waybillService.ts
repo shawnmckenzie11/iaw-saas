@@ -239,6 +239,24 @@ export async function syncEventsBatch(
       });
     }
 
+    if (
+      record &&
+      evt.eventType === 'WAYBILL_DELIVERED' &&
+      record.status === 'DELIVERED'
+    ) {
+      syncedIds.push(evt.id);
+      continue;
+    }
+
+    if (
+      record &&
+      evt.eventType === 'WAYBILL_PICKED_UP' &&
+      (record.status === 'PICKED_UP' || record.status === 'DELIVERED')
+    ) {
+      syncedIds.push(evt.id);
+      continue;
+    }
+
     await appendEventAndProject({
       clientSideUuid: evt.clientSideUuid,
       waybillNumber: evt.waybillNumber,

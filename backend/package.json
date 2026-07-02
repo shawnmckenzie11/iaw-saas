@@ -9,6 +9,8 @@
     "start": "node dist/server.js",
     "seed": "ts-node src/seed.ts",
     "seed:prod": "node dist/seed.js",
+    "reseed:archive": "ts-node src/runArchiveReseed.ts",
+    "reseed:archive:prod": "node dist/runArchiveReseed.js",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "test": "jest --runInBand --detectOpenHandles"

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, FormEvent } from 'react';
-import { queueBlob, queueEvent } from '../db/indexedDb';
+import { queueBlob, queueEvent, removeSyncedEvents } from '../db/indexedDb';
 import type { AuthSession } from '../services/auth';
 import { syncManager } from '../services/SyncManager';
 import type { Waybill } from '../types/waybill';
@@ -134,7 +134,7 @@ export default function SignOffPage({ waybill, session, isOnline, onBack }: Sign
     await syncManager.refresh();
 
     if (isOnline && session.token) {
-      await fetch(`/api/waybills/${waybill.waybillNumber}/events`, {
+      const res = await fetch(`/api/waybills/${waybill.waybillNumber}/events`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -145,7 +145,10 @@ export default function SignOffPage({ waybill, session, isOnline, onBack }: Sign
           data: { deliveredAt, signatureName: printedName },
         }),
       }).catch(() => undefined);
-      void syncManager.syncQueue(session);
+      if (res?.ok) {
+        await removeSyncedEvents([eventId]);
+      }
+      await syncManager.syncQueue(session);
     }
 
     onBack();

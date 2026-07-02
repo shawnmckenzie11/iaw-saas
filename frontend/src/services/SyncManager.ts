@@ -127,10 +127,6 @@ class SyncManager {
           const body = await res.json();
           if (Array.isArray(body.syncedIds)) {
             await removeSyncedEvents(body.syncedIds);
-            for (const id of body.syncedIds) {
-              const existing = allEvents.find((e) => e.id === id);
-              if (existing && !syncable.some((s) => s.id === id)) continue;
-            }
           }
         }
       }
@@ -141,13 +137,17 @@ class SyncManager {
         form.append('waybillNumber', item.waybillNumber);
         form.append('fileType', item.fileType);
         form.append('blob', item.blob, `${item.fileType}.png`);
-        const res = await fetch('/api/sync/blobs', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${session.token}` },
-          body: form,
-        });
-        if (res.ok) {
-          await removeBlob(item.id);
+        try {
+          const res = await fetch('/api/sync/blobs', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${session.token}` },
+            body: form,
+          });
+          if (res.ok) {
+            await removeBlob(item.id);
+          }
+        } catch {
+          // keep blob for next retry
         }
       }
     } catch {

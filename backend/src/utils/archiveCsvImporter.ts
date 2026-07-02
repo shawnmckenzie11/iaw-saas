@@ -40,6 +40,17 @@ function repoPath(...segments: string[]): string {
 }
 
 const DEFAULT_CSV_PATH = repoPath('docs', 'BACKUP of Requests - Archive.csv');
+const CONTAINER_CSV_PATH = path.join(process.cwd(), 'data', 'archive.csv');
+
+/**
+ * Resolves the archive CSV path for local dev or Fly container layouts.
+ */
+export function resolveArchiveCsvPath(): string {
+  if (fs.existsSync(DEFAULT_CSV_PATH)) return DEFAULT_CSV_PATH;
+  if (fs.existsSync(CONTAINER_CSV_PATH)) return CONTAINER_CSV_PATH;
+  return DEFAULT_CSV_PATH;
+}
+
 const DEFAULT_TOP_PICKUPS_PATH = repoPath('frontend', 'src', 'data', 'topPickups.json');
 
 /**
@@ -84,13 +95,14 @@ function parseArchiveDate(raw: string): Date {
 /**
  * Reads and parses all valid rows from the archive CSV.
  */
-export function readArchiveCsv(csvPath: string = DEFAULT_CSV_PATH): ParsedArchiveRow[] {
-  if (!fs.existsSync(csvPath)) {
-    console.warn(`[Archive] CSV not found at ${csvPath}`);
+export function readArchiveCsv(csvPath?: string): ParsedArchiveRow[] {
+  const resolvedPath = csvPath ?? resolveArchiveCsvPath();
+  if (!fs.existsSync(resolvedPath)) {
+    console.warn(`[Archive] CSV not found at ${resolvedPath}`);
     return [];
   }
 
-  const content = fs.readFileSync(csvPath, 'utf-8');
+  const content = fs.readFileSync(resolvedPath, 'utf-8');
   const lines = content.split(/\r?\n/).filter((line) => line.trim().length > 0);
   const rows: ParsedArchiveRow[] = [];
 
@@ -162,6 +174,30 @@ export function computeTopPickups(rows: ParsedArchiveRow[], windowDays = 365, li
 
   const fallback = VERIFIED_BUSINESSES.filter((name) => !sorted.includes(name));
   return [...sorted, ...fallback].slice(0, limit);
+}
+
+/** Minimum price applied when route pricing returns zero or manual. */
+export const ARCHIVE_PRICE_FALLBACK = 1;
+
+/** Default cutoff for YTD archive imports (Jan 1 of current year). */
+export function archiveYearStart(year?: number): Date {
+  return new Date(year ?? new Date().getFullYear(), 0, 1, 0, 0, 0, 0);
+}
+
+/**
+ * Returns archive rows on or after the cutoff date, oldest first.
+ */
+export function filterArchiveRowsSince(rows: ParsedArchiveRow[], since: Date): ParsedArchiveRow[] {
+  return rows
+    .filter((row) => row.timestamp >= since)
+    .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+}
+
+/**
+ * Resolves a delivery price from pricing rules, using fallback when unrated.
+ */
+export function resolveArchivePrice(row: ParsedArchiveRow, fallback = ARCHIVE_PRICE_FALLBACK): number {
+  return row.calculatedPrice > 0 ? row.calculatedPrice : fallback;
 }
 
 /**

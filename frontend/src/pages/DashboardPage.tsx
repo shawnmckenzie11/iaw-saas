@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { iawDb, queueEvent } from '../db/indexedDb';
+import { iawDb, queueEvent, removeSyncedEvents } from '../db/indexedDb';
 import { FALLBACK_WAYBILLS } from '../data/fallbackWaybills';
 import { DRIVERS, driverFirstName } from '../data/drivers';
 import type { AuthSession } from '../services/auth';
@@ -306,7 +306,7 @@ export default function DashboardPage({
     await syncManager.refresh();
 
     if (isOnline && session.token) {
-      await fetch(`/api/waybills/${wb.waybillNumber}/events`, {
+      const res = await fetch(`/api/waybills/${wb.waybillNumber}/events`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -317,7 +317,10 @@ export default function DashboardPage({
           data: { deliveredAt },
         }),
       }).catch(() => undefined);
-      void syncManager.syncQueue(session);
+      if (res?.ok) {
+        await removeSyncedEvents([eventId]);
+      }
+      await syncManager.syncQueue(session);
     }
 
     setWaybills((prev) => {

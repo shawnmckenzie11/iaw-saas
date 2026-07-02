@@ -35,8 +35,9 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   return (
     <div className="login-page">
       <form className="login-card" onSubmit={handleSubmit}>
-        <div className="login-logo">🚚</div>
-        <h1>IAW Courier Portal</h1>
+        <div className="login-logo">
+          <img src="/iaw-courier-logo.png" alt="IAW Courier" />
+        </div>
         <p className="login-subtitle">Choose your portal to continue</p>
 
         <div className="login-mode-tabs">

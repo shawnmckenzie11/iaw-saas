@@ -57,6 +57,15 @@ export default function App() {
     }
   }, [session, isOnline]);
 
+  /** Retry pending queue items while online (events + signature/photo blobs). */
+  useEffect(() => {
+    if (!session || !isOnline || stats.pendingCount === 0) return;
+    const interval = window.setInterval(() => {
+      void syncManager.syncQueue(session);
+    }, 10000);
+    return () => window.clearInterval(interval);
+  }, [session, isOnline, stats.pendingCount]);
+
   useEffect(() => {
     const cached = sessionStorage.getItem('iaw_waybills');
     if (cached) {
