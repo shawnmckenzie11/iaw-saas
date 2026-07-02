@@ -47,6 +47,7 @@ const suggestions = suggestionsData as {
 export default function PickupScreen({ record, activeDriverId, onNavigateBack }: PickupScreenProps) {
   // Stepper state (1: Pickup, 2: Dropoff, 3: Details, 4: Signature/Submit)
   const [currentStep, setCurrentStep] = useState<number>(1);
+  const [localRecord, setLocalRecord] = useState<DeliveryRecord | null>(record || null);
 
   // Form State variables
   const [pickupLocation, setPickupLocation] = useState('');
@@ -290,14 +291,14 @@ export default function PickupScreen({ record, activeDriverId, onNavigateBack }:
       if (currentStep === 2) {
         setSaving(true);
         try {
-          const clientUuid = record ? record.clientSideUuid : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+          const clientUuid = localRecord ? localRecord.clientSideUuid : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
             const r = (Math.random() * 16) | 0;
             return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
           });
           const allRecs = await db.getDeliveryRecords();
           const existingWaybills = allRecs.map(r => r.waybillNumber);
-          const waybillNum = record 
-            ? record.waybillNumber 
+          const waybillNum = localRecord 
+            ? localRecord.waybillNumber 
             : (manualWaybill.trim() ? manualWaybill.trim() : getNextWaybillNumber(existingWaybills));
 
           const finalDesc = descriptionOption === 'Other' ? description : descriptionOption;
@@ -305,12 +306,12 @@ export default function PickupScreen({ record, activeDriverId, onNavigateBack }:
           const pricing = calculatePrice(pickupLocation, dropoffDestination, finalWeight, skidRequired, priority);
 
           const transitRecord: DeliveryRecord = {
-            id: record ? record.id : clientUuid,
+            id: localRecord ? localRecord.id : clientUuid,
             clientSideUuid: clientUuid,
             waybillNumber: waybillNum,
             status: 'PICKED_UP', // Save as pending-delivery (picked up)
             syncStatus: 'PENDING',
-            driverId: record ? record.driverId : (activeDriverId || null),
+            driverId: localRecord ? localRecord.driverId : (activeDriverId || null),
             vehicleType,
             parcelDescription: finalDesc,
             parcelQuantity: 1,
@@ -333,14 +334,15 @@ export default function PickupScreen({ record, activeDriverId, onNavigateBack }:
             priority,
             businessOrResidential: 'Business',
             additionalComments: comments || undefined,
-            createdAt: record ? record.createdAt : new Date().toISOString(),
-            capturedAt: record ? record.capturedAt : new Date().toISOString(),
+            createdAt: localRecord ? localRecord.createdAt : new Date().toISOString(),
+            capturedAt: localRecord ? localRecord.capturedAt : new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             calculatedPrice: pricing.price,
             priceCategory: pricing.category
           };
 
           await db.saveDeliveryRecord(transitRecord);
+          setLocalRecord(transitRecord);
           syncManager.syncQueue();
 
           // Always close the Waybill window and return to dashboard. 
@@ -371,20 +373,22 @@ export default function PickupScreen({ record, activeDriverId, onNavigateBack }:
     }
     setSaving(true);
     try {
-      const clientUuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const clientUuid = localRecord ? localRecord.clientSideUuid : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
         const r = (Math.random() * 16) | 0;
         return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
       });
       const allRecs = await db.getDeliveryRecords();
       const existingWaybills = allRecs.map(r => r.waybillNumber);
-      const waybillNum = manualWaybill.trim() ? manualWaybill.trim() : getNextWaybillNumber(existingWaybills);
+      const waybillNum = localRecord 
+        ? localRecord.waybillNumber 
+        : (manualWaybill.trim() ? manualWaybill.trim() : getNextWaybillNumber(existingWaybills));
 
       const finalDesc = descriptionOption === 'Other' ? description : descriptionOption;
       const finalWeight = weightClassOption === 'Other' ? weightClass : weightClassOption;
       const pricing = calculatePrice(pickupLocation, dropoffDestination || 'Pending Dropoff', weightClass, skidRequired, priority);
 
       const draftRecord: DeliveryRecord = {
-        id: clientUuid,
+        id: localRecord ? localRecord.id : clientUuid,
         clientSideUuid: clientUuid,
         waybillNumber: waybillNum,
         status: 'DRAFT',
@@ -404,13 +408,14 @@ export default function PickupScreen({ record, activeDriverId, onNavigateBack }:
         dropoffDestinationName: dropoffDestination || 'Pending Dropoff',
         dropoffAddress: dropoffAddress || 'Pending Address',
         priority,
-        createdAt: new Date().toISOString(),
-        capturedAt: new Date().toISOString(),
+        createdAt: localRecord ? localRecord.createdAt : new Date().toISOString(),
+        capturedAt: localRecord ? localRecord.capturedAt : new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         calculatedPrice: pricing.price,
         priceCategory: pricing.category
       };
       await db.saveDeliveryRecord(draftRecord);
+      setLocalRecord(draftRecord);
       syncManager.syncQueue();
       onNavigateBack();
     } catch (e: any) {
@@ -427,14 +432,14 @@ export default function PickupScreen({ record, activeDriverId, onNavigateBack }:
     }
     setSaving(true);
     try {
-      const clientUuid = record ? record.clientSideUuid : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const clientUuid = localRecord ? localRecord.clientSideUuid : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
         const r = (Math.random() * 16) | 0;
         return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
       });
       const allRecs = await db.getDeliveryRecords();
       const existingWaybills = allRecs.map(r => r.waybillNumber);
-      const waybillNum = record 
-        ? record.waybillNumber 
+      const waybillNum = localRecord 
+        ? localRecord.waybillNumber 
         : (manualWaybill.trim() ? manualWaybill.trim() : getNextWaybillNumber(existingWaybills));
 
       const finalDesc = descriptionOption === 'Other' ? description : descriptionOption;
@@ -442,7 +447,7 @@ export default function PickupScreen({ record, activeDriverId, onNavigateBack }:
       const pricing = calculatePrice(pickupLocation, dropoffDestination || 'Pending Dropoff', weightClass, skidRequired, priority);
 
       const transitRecord: DeliveryRecord = {
-        id: record ? record.id : clientUuid,
+        id: localRecord ? localRecord.id : clientUuid,
         clientSideUuid: clientUuid,
         waybillNumber: waybillNum,
         status: 'PICKED_UP', // Mark as picked up (in transit)
@@ -462,13 +467,14 @@ export default function PickupScreen({ record, activeDriverId, onNavigateBack }:
         dropoffDestinationName: dropoffDestination || 'Pending Dropoff',
         dropoffAddress: dropoffAddress || 'Pending Address',
         priority,
-        createdAt: record ? record.createdAt : new Date().toISOString(),
-        capturedAt: record ? record.capturedAt : new Date().toISOString(),
+        createdAt: localRecord ? localRecord.createdAt : new Date().toISOString(),
+        capturedAt: localRecord ? localRecord.capturedAt : new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         calculatedPrice: pricing.price,
         priceCategory: pricing.category
       };
       await db.saveDeliveryRecord(transitRecord);
+      setLocalRecord(transitRecord);
       syncManager.syncQueue();
       
       // Move to Step 2 (Dropoff)
@@ -483,14 +489,14 @@ export default function PickupScreen({ record, activeDriverId, onNavigateBack }:
   const handleSavePendingDelivery = async () => {
     setSaving(true);
     try {
-      const clientUuid = record ? record.clientSideUuid : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const clientUuid = localRecord ? localRecord.clientSideUuid : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
         const r = (Math.random() * 16) | 0;
         return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
       });
       const allRecs = await db.getDeliveryRecords();
       const existingWaybills = allRecs.map(r => r.waybillNumber);
-      const waybillNum = record 
-        ? record.waybillNumber 
+      const waybillNum = localRecord 
+        ? localRecord.waybillNumber 
         : (manualWaybill.trim() ? manualWaybill.trim() : getNextWaybillNumber(existingWaybills));
 
       const finalDesc = descriptionOption === 'Other' ? description : descriptionOption;
@@ -498,7 +504,7 @@ export default function PickupScreen({ record, activeDriverId, onNavigateBack }:
       const pricing = calculatePrice(pickupLocation, dropoffDestination, weightClass, skidRequired, priority);
 
       const transitRecord: DeliveryRecord = {
-        id: record ? record.id : clientUuid,
+        id: localRecord ? localRecord.id : clientUuid,
         clientSideUuid: clientUuid,
         waybillNumber: waybillNum,
         status: 'PICKED_UP', // Save as pending-delivery (picked up)
@@ -520,8 +526,8 @@ export default function PickupScreen({ record, activeDriverId, onNavigateBack }:
         dropoffContactName: dropoffContact || undefined,
         dropoffContactPhone: dropoffPhone || undefined,
         priority,
-        createdAt: record ? record.createdAt : new Date().toISOString(),
-        capturedAt: record ? record.capturedAt : new Date().toISOString(),
+        createdAt: localRecord ? localRecord.createdAt : new Date().toISOString(),
+        capturedAt: localRecord ? localRecord.capturedAt : new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         signatureName: signerName || undefined,
         proofPhotoUrl: photoUri || undefined,
@@ -529,6 +535,7 @@ export default function PickupScreen({ record, activeDriverId, onNavigateBack }:
         priceCategory: pricing.category
       };
       await db.saveDeliveryRecord(transitRecord);
+      setLocalRecord(transitRecord);
       syncManager.syncQueue();
       onNavigateBack();
     } catch (e: any) {
@@ -583,14 +590,14 @@ export default function PickupScreen({ record, activeDriverId, onNavigateBack }:
       const consentText = hasSignature 
         ? "I hereby confirm receipt of the parcel(s) described on this waybill in good order and condition. I agree that my electronic signature represents my consent and approval."
         : undefined;
-      const clientUuid = record ? record.clientSideUuid : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const clientUuid = localRecord ? localRecord.clientSideUuid : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
         const r = (Math.random() * 16) | 0;
         return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
       });
       const allRecs = await db.getDeliveryRecords();
       const existingWaybills = allRecs.map(r => r.waybillNumber);
-      const waybillNum = record 
-        ? record.waybillNumber 
+      const waybillNum = localRecord 
+        ? localRecord.waybillNumber 
         : (manualWaybill.trim() ? manualWaybill.trim() : getNextWaybillNumber(existingWaybills));
 
       // Cryptographic signature hash including image content (only if signature details exist)
@@ -606,7 +613,7 @@ export default function PickupScreen({ record, activeDriverId, onNavigateBack }:
       const pricing = calculatePrice(pickupLocation, dropoffDestination, weightClass, skidRequired, priority);
 
       const finalRecord: DeliveryRecord = {
-        id: record ? record.id : clientUuid,
+        id: localRecord ? localRecord.id : clientUuid,
         clientSideUuid: clientUuid,
         waybillNumber: waybillNum,
         status: 'DELIVERED', // Complete delivery
@@ -633,8 +640,8 @@ export default function PickupScreen({ record, activeDriverId, onNavigateBack }:
         dropoffLongitude: finalDropoffLon || -80.99,
         priority,
         additionalComments: comments || undefined,
-        createdAt: record ? record.createdAt : deliveredAt,
-        capturedAt: record ? record.capturedAt : deliveredAt,
+        createdAt: localRecord ? localRecord.createdAt : deliveredAt,
+        capturedAt: localRecord ? localRecord.capturedAt : deliveredAt,
         signedAt: deliveredAt,
         deliveredAt,
         signatureName: signerName,
@@ -651,6 +658,7 @@ export default function PickupScreen({ record, activeDriverId, onNavigateBack }:
       };
 
       await db.saveDeliveryRecord(finalRecord);
+      setLocalRecord(finalRecord);
       syncManager.syncQueue();
       onNavigateBack();
     } catch (e: any) {
@@ -704,7 +712,7 @@ export default function PickupScreen({ record, activeDriverId, onNavigateBack }:
     return (
       <View style={styles.summaryCard}>
         <Text style={styles.summaryTitle}>
-          Waybill {record ? record.waybillNumber : (manualWaybill.trim() || 'Pending')}
+          Waybill {localRecord ? localRecord.waybillNumber : (manualWaybill.trim() || 'Pending')}
         </Text>
         
         <View style={styles.summarySection}>
@@ -772,7 +780,7 @@ export default function PickupScreen({ record, activeDriverId, onNavigateBack }:
             <Text style={styles.backHeaderBtnText}>⬅ Exit</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>
-            {record ? `Signoff Waybill: ${record.waybillNumber}` : 'New Delivery capture'}
+            {localRecord ? `Waybill: ${localRecord.waybillNumber}` : 'New Delivery capture'}
           </Text>
         </View>
 
