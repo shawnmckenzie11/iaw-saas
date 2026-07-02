@@ -17,6 +17,26 @@ if (!fs.existsSync(DB_PATH)) {
   fs.writeFileSync(DB_PATH, JSON.stringify([], null, 2));
 }
 
+const INVOICES_DB_PATH = path.join(__dirname, 'invoices.json');
+
+// Initialize local Invoices JSON database
+if (!fs.existsSync(INVOICES_DB_PATH)) {
+  fs.writeFileSync(INVOICES_DB_PATH, JSON.stringify([], null, 2));
+}
+
+function getInvoices() {
+  try {
+    const data = fs.readFileSync(INVOICES_DB_PATH, 'utf-8');
+    return JSON.parse(data);
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveInvoices(invoices) {
+  fs.writeFileSync(INVOICES_DB_PATH, JSON.stringify(invoices, null, 2));
+}
+
 function getDeliveries() {
   try {
     const data = fs.readFileSync(DB_PATH, 'utf-8');
@@ -371,6 +391,38 @@ app.post('/api/deliveries', (req, res) => {
 app.post('/api/sync-csv', (req, res) => {
   scanCSV();
   res.json({ success: true, deliveries: getDeliveries() });
+});
+
+// Invoices REST API Endpoints
+app.get('/api/invoices', (req, res) => {
+  res.json(getInvoices());
+});
+
+app.post('/api/invoices', (req, res) => {
+  const invoice = req.body;
+  if (!invoice || !invoice.id) {
+    return res.status(400).json({ error: 'Invalid invoice payload' });
+  }
+
+  const invoices = getInvoices();
+  const index = invoices.findIndex(i => i.id === invoice.id);
+
+  if (index >= 0) {
+    invoices[index] = { ...invoices[index], ...invoice, updatedAt: new Date().toISOString() };
+  } else {
+    invoices.push(invoice);
+  }
+
+  saveInvoices(invoices);
+  res.json({ success: true, invoice });
+});
+
+app.delete('/api/invoices/:id', (req, res) => {
+  const { id } = req.params;
+  const invoices = getInvoices();
+  const filtered = invoices.filter(i => i.id !== id);
+  saveInvoices(filtered);
+  res.json({ success: true });
 });
 
 app.listen(PORT, () => {

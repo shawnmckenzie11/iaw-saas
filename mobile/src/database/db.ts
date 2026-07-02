@@ -57,7 +57,22 @@ export interface DeliveryRecord {
   optionalNotes?: string;
 }
 
+export interface InvoiceRecord {
+  id: string;
+  invoiceNumber: string;
+  customerName: string;
+  billingMonth: string;
+  subtotal: number;
+  taxAmount: number;
+  totalAmount: number;
+  status: 'DRAFT' | 'SENT' | 'PAID' | 'VOIDED';
+  createdAt: string;
+  updatedAt: string;
+  waybillNumbers: string[];
+}
+
 const API_URL = 'http://localhost:3001/api/deliveries';
+const INVOICES_API_URL = 'http://localhost:3001/api/invoices';
 
 async function fetchWithTimeout(url: string, options?: RequestInit, timeout = 1200): Promise<any> {
   const controller = new AbortController();
@@ -109,22 +124,12 @@ class WebStorageDatabase {
       // 2. Fetch latest list from API
       const serverRecords = await fetchWithTimeout(API_URL);
       
-      // Sort and keep only the 5 most recent
-      const sortedServer = serverRecords.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      const prunedServer = sortedServer.slice(0, 5);
-
-      // 3. Cache server records locally
-      this.saveRecords(prunedServer);
-      return prunedServer;
+      // Cache server records locally
+      this.saveRecords(serverRecords);
+      return serverRecords.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     } catch (err) {
       console.log('API offline, loading from localStorage fallback:', err);
-      const cached = this.getRecords().sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      if (cached.length > 5) {
-        const pruned = cached.slice(0, 5);
-        this.saveRecords(pruned);
-        return pruned;
-      }
-      return cached;
+      return this.getRecords().sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     }
   }
 
@@ -167,6 +172,64 @@ class WebStorageDatabase {
       records[index].syncedAt = syncStatus === 'SYNCED' ? new Date().toISOString() : undefined;
       records[index].updatedAt = new Date().toISOString();
       this.saveRecords(records);
+    }
+  }
+
+  private getInvoiceRecords(): InvoiceRecord[] {
+    if (typeof window === 'undefined' || !window.localStorage) return [];
+    const data = localStorage.getItem('iaw_invoice_records');
+    return data ? JSON.parse(data) : [];
+  }
+
+  private saveInvoiceRecords(invoices: InvoiceRecord[]) {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      localStorage.setItem('iaw_invoice_records', JSON.stringify(invoices));
+    }
+  }
+
+  async getInvoices(): Promise<InvoiceRecord[]> {
+    try {
+      const serverInvoices = await fetchWithTimeout(INVOICES_API_URL);
+      this.saveInvoiceRecords(serverInvoices);
+      return serverInvoices.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    } catch (err) {
+      console.log('Invoices API offline, loading fallback local invoices:', err);
+      return this.getInvoiceRecords().sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    }
+  }
+
+  async saveInvoice(invoice: InvoiceRecord): Promise<void> {
+    const invoices = this.getInvoiceRecords();
+    const index = invoices.findIndex(i => i.id === invoice.id);
+    if (index >= 0) {
+      invoices[index] = { ...invoice, updatedAt: new Date().toISOString() };
+    } else {
+      invoices.push(invoice);
+    }
+    this.saveInvoiceRecords(invoices);
+
+    try {
+      await fetchWithTimeout(INVOICES_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(invoice)
+      });
+    } catch (e) {
+      console.log('Save invoice API offline, stored locally');
+    }
+  }
+
+  async deleteInvoice(id: string): Promise<void> {
+    const invoices = this.getInvoiceRecords();
+    const filtered = invoices.filter(i => i.id !== id);
+    this.saveInvoiceRecords(filtered);
+
+    try {
+      await fetchWithTimeout(`${INVOICES_API_URL}/${id}`, {
+        method: 'DELETE'
+      });
+    } catch (e) {
+      console.log('Delete invoice API offline, deleted locally');
     }
   }
 }
@@ -228,6 +291,22 @@ class SQLiteNativeDatabase {
         proof_photo_url TEXT
       );
     `);
+
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS invoice_records (
+        id TEXT PRIMARY KEY,
+        invoice_number TEXT NOT NULL,
+        customer_name TEXT NOT NULL,
+        billing_month TEXT NOT NULL,
+        subtotal REAL NOT NULL,
+        tax_amount REAL NOT NULL,
+        total_amount REAL NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        waybill_numbers TEXT NOT NULL
+      );
+    `);
   }
 
   async getDeliveryRecords(): Promise<DeliveryRecord[]> {
@@ -269,21 +348,6 @@ class SQLiteNativeDatabase {
       console.log('SQLite Sync API offline, using local copy:', e);
     }
 
-    // Keep only 5 most recent records locally to align with request
-    try {
-      await this.db.runAsync(`
-        DELETE FROM delivery_records 
-        WHERE id NOT IN (
-          SELECT id FROM (
-            SELECT id FROM delivery_records 
-            ORDER BY created_at DESC 
-            LIMIT 5
-          )
-        )
-      `);
-    } catch (dbErr) {
-      console.warn('Prune native SQLite failed:', dbErr);
-    }
 
     const rows = await this.db.getAllAsync('SELECT * FROM delivery_records ORDER BY created_at DESC');
     return rows.map((row: any) => this.mapRowToRecord(row));
@@ -429,6 +493,80 @@ class SQLiteNativeDatabase {
       signatureGpsLongitude: row.signature_gps_longitude || undefined,
       proofPhotoUrl: row.proof_photo_url || undefined
     };
+  }
+
+  async getInvoices(): Promise<InvoiceRecord[]> {
+    if (!this.db) await this.init();
+
+    try {
+      const serverInvoices = await fetchWithTimeout(INVOICES_API_URL);
+      await this.db.runAsync('DELETE FROM invoice_records');
+      for (const inv of serverInvoices) {
+        await this.db.runAsync(
+          `INSERT INTO invoice_records (id, invoice_number, customer_name, billing_month, subtotal, tax_amount, total_amount, status, created_at, updated_at, waybill_numbers)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [inv.id, inv.invoiceNumber, inv.customerName, inv.billingMonth, inv.subtotal, inv.taxAmount, inv.totalAmount, inv.status, inv.createdAt, inv.updatedAt, inv.waybillNumbers.join(',')]
+        );
+      }
+    } catch (e) {
+      console.log('SQLite fetch invoices API offline, using local copy:', e);
+    }
+
+    const rows = await this.db.getAllAsync('SELECT * FROM invoice_records ORDER BY created_at DESC');
+    return rows.map((row: any) => ({
+      id: row.id,
+      invoiceNumber: row.invoice_number,
+      customerName: row.customer_name,
+      billingMonth: row.billing_month,
+      subtotal: row.subtotal,
+      taxAmount: row.tax_amount,
+      totalAmount: row.total_amount,
+      status: row.status as 'DRAFT' | 'SENT' | 'PAID' | 'VOIDED',
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      waybillNumbers: row.waybill_numbers ? row.waybill_numbers.split(',') : []
+    }));
+  }
+
+  async saveInvoice(invoice: InvoiceRecord): Promise<void> {
+    if (!this.db) await this.init();
+
+    const existing = await this.db.getFirstAsync('SELECT id FROM invoice_records WHERE id = ?', [invoice.id]);
+    if (existing) {
+      await this.db.runAsync(
+        `UPDATE invoice_records SET status = ?, updated_at = ? WHERE id = ?`,
+        [invoice.status, new Date().toISOString(), invoice.id]
+      );
+    } else {
+      await this.db.runAsync(
+        `INSERT INTO invoice_records (id, invoice_number, customer_name, billing_month, subtotal, tax_amount, total_amount, status, created_at, updated_at, waybill_numbers)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [invoice.id, invoice.invoiceNumber, invoice.customerName, invoice.billingMonth, invoice.subtotal, invoice.taxAmount, invoice.totalAmount, invoice.status, invoice.createdAt, invoice.updatedAt, invoice.waybillNumbers.join(',')]
+      );
+    }
+
+    try {
+      await fetchWithTimeout(INVOICES_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(invoice)
+      });
+    } catch (e) {
+      console.log('SQLite Save invoice API offline, saved locally');
+    }
+  }
+
+  async deleteInvoice(id: string): Promise<void> {
+    if (!this.db) await this.init();
+    await this.db.runAsync('DELETE FROM invoice_records WHERE id = ?', [id]);
+
+    try {
+      await fetchWithTimeout(`${INVOICES_API_URL}/${id}`, {
+        method: 'DELETE'
+      });
+    } catch (e) {
+      console.log('SQLite Delete invoice API offline, deleted locally');
+    }
   }
 }
 

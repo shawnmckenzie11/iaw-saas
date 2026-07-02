@@ -3,9 +3,10 @@ import { StyleSheet, SafeAreaView, StatusBar, View, Text, TouchableOpacity } fro
 import DashboardScreen from './src/screens/DashboardScreen';
 import PickupScreen from './src/screens/PickupScreen';
 import LoginScreen from './src/screens/LoginScreen';
+import AccountingScreen from './src/screens/AccountingScreen';
 import { DeliveryRecord } from './src/database/db';
 
-type ScreenName = 'DASHBOARD' | 'PICKUP' | 'DROPOFF';
+type ScreenName = 'DASHBOARD' | 'PICKUP' | 'DROPOFF' | 'ACCOUNTING';
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -42,6 +43,10 @@ export default function App() {
     setCurrentScreen('DROPOFF');
   };
 
+  const handleNavigateToAccounting = () => {
+    setCurrentScreen('ACCOUNTING');
+  };
+
   const handleNavigateBack = () => {
     setSelectedRecord(null);
     setCurrentScreen('DASHBOARD');
@@ -62,6 +67,7 @@ export default function App() {
                 setActiveDriverId={setActiveDriverId}
                 onNavigateToPickup={handleNavigateToPickup}
                 onNavigateToDropoff={handleNavigateToDropoff}
+                onNavigateToAccounting={handleNavigateToAccounting}
                 isDispatchRole={userRole === 'DISPATCH'}
                 onSignOut={handleSignOut}
               />
@@ -78,6 +84,12 @@ export default function App() {
               <PickupScreen
                 record={selectedRecord}
                 activeDriverId={activeDriverId}
+                onNavigateBack={handleNavigateBack}
+              />
+            )}
+
+            {currentScreen === 'ACCOUNTING' && (
+              <AccountingScreen
                 onNavigateBack={handleNavigateBack}
               />
             )}

@@ -44,6 +44,7 @@ interface DashboardProps {
   setActiveDriverId: (id: string) => void;
   onNavigateToPickup: () => void;
   onNavigateToDropoff: (record: DeliveryRecord) => void;
+  onNavigateToAccounting?: () => void;
   isDispatchRole?: boolean;
   onSignOut?: () => void;
 }
@@ -53,6 +54,7 @@ export default function DashboardScreen({
   setActiveDriverId,
   onNavigateToPickup,
   onNavigateToDropoff,
+  onNavigateToAccounting,
   isDispatchRole = false,
   onSignOut,
 }: DashboardProps) {
@@ -430,10 +432,24 @@ export default function DashboardScreen({
         </View>
       </View>
 
-      {/* New Pickup Trigger Button */}
-      <TouchableOpacity style={styles.primaryButton} onPress={onNavigateToPickup}>
-        <Text style={styles.primaryButtonText}>➕ NEW PICKUP (WAYBILL)</Text>
-      </TouchableOpacity>
+      {/* Action Buttons Row */}
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginVertical: 4 }}>
+        <TouchableOpacity 
+          style={[styles.primaryButton, { flex: 1, marginRight: isAdminMode ? 10 : 0 }]} 
+          onPress={onNavigateToPickup}
+        >
+          <Text style={[styles.primaryButtonText, { fontSize: 12 }]}>➕ NEW PICKUP (WAYBILL)</Text>
+        </TouchableOpacity>
+
+        {isAdminMode && onNavigateToAccounting && (
+          <TouchableOpacity 
+            style={[styles.primaryButton, { flex: 1, backgroundColor: '#5856D6' }]} 
+            onPress={onNavigateToAccounting}
+          >
+            <Text style={[styles.primaryButtonText, { fontSize: 12 }]}>📊 ACCOUNTING & INVOICES</Text>
+          </TouchableOpacity>
+        )}
+      </View>
 
       {/* Shared Active/Completed/Pending Price Navigation Tabs */}
       <View style={styles.tabBar}>

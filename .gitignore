@@ -5,3 +5,4 @@ mobile/.expo/
 .DS_Store
 mobile/.DS_Store
 db.json
+invoices.json
