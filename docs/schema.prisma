@@ -14,8 +14,6 @@ enum DeliveryStatus {
   PICKED_UP
   DELIVERED
   INVOICED
-  POSTED_TO_QBO
-  FAILED_POSTING
   VOIDED
 }
 
@@ -45,7 +43,7 @@ enum QboSyncStatus {
 }
 
 enum PricingTier {
-  TIER_1 // Common routes (Jannatec, Redpath, Mobile, Bull, Sandvik, Wajax, Bus, Komatsu)
+  TIER_1 // Common routes lookup (route_rates table)
   TIER_2 // In-town standard ($60 flat, dispatcher adjustable)
   TIER_3 // Out of town (manual dispatcher entry)
 }
@@ -76,6 +74,19 @@ model Driver {
   deliveryRecords DeliveryRecord[]
 
   @@map("drivers")
+}
+
+model RouteRate {
+  id              String           @id @default(uuid()) @db.Uuid
+  origin          String
+  destination     String
+  flatRate        Decimal          @map("flat_rate") @db.Decimal(10, 2)
+  effectiveDate   DateTime         @default(now()) @map("effective_date")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  deliveryRecords DeliveryRecord[]
+
+  @@index([origin, destination, effectiveDate(sort: Desc)], name: "idx_route_rates_lookup")
+  @@map("route_rates")
 }
 
 model DeliveryRecord {
@@ -138,7 +149,7 @@ model DeliveryRecord {
   // Electronic Signature
   signatureName         String?   @map("signature_name") // PII
   signatureImageUrl     String?   @map("signature_image_url")
-  signatureHash         String?   @map("signature_hash")
+  signatureHash         String?   @map("signature_hash") // SHA-256 cryptographic hash of: signature image bytes/file content + client_side_uuid + delivered_at + signature_name + driver_id
   signatureConsentText  String?   @map("signature_consent_text")
   signatureIpAddress    String?   @map("signature_ip_address")
   signatureGpsLatitude  Decimal?  @map("signature_gps_latitude") @db.Decimal(9, 6)
@@ -149,6 +160,8 @@ model DeliveryRecord {
 
   // Cost Inputs & Financials
   pricingTier                PricingTier @default(TIER_2) @map("pricing_tier")
+  appliedRouteRate           RouteRate?  @relation(fields: [appliedRouteRateId], references: [id])
+  appliedRouteRateId         String?     @map("applied_route_rate_id") @db.Uuid
   pricingIsManuallyAdjusted  Boolean     @default(false) @map("pricing_is_manually_adjusted")
   pricingOverrideReason      String?     @map("pricing_override_reason")
   pricingBaseRate            Decimal     @default(0.00) @map("pricing_base_rate") @db.Decimal(10, 2)
@@ -170,5 +183,7 @@ model DeliveryRecord {
   @@index([clientSideUuid])
   @@index([waybillNumber])
   @@index([status])
+  @@index([customerId])
+  @@index([driverId])
   @@map("delivery_records")
 }

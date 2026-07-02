@@ -1,0 +1,7 @@
+node_modules/
+mobile/node_modules/
+.expo/
+mobile/.expo/
+.DS_Store
+mobile/.DS_Store
+db.json

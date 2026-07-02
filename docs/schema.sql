@@ -9,8 +9,6 @@ CREATE TYPE delivery_status AS ENUM (
     'PICKED_UP',
     'DELIVERED',
     'INVOICED',
-    'POSTED_TO_QBO',
-    'FAILED_POSTING',
     'VOIDED'
 );
 
@@ -40,7 +38,7 @@ CREATE TYPE qbo_sync_status AS ENUM (
 );
 
 CREATE TYPE pricing_tier AS ENUM (
-    'TIER_1', -- Common routes (Jannatec, Redpath, Mobile, Bull, Sandvik, Wajax, Bus, Komatsu)
+    'TIER_1', -- Common routes lookup (route_rates table)
     'TIER_2', -- In-town standard ($60 flat, dispatcher adjustable)
     'TIER_3'  -- Out of town (manual dispatcher entry)
 );
@@ -67,6 +65,16 @@ CREATE TABLE drivers (
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Route Rates table (Tier 1 flat rates for specific routes)
+CREATE TABLE route_rates (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    origin VARCHAR(255) NOT NULL,
+    destination VARCHAR(255) NOT NULL,
+    flat_rate NUMERIC(10, 2) NOT NULL,
+    effective_date TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Delivery Records table
@@ -129,7 +137,7 @@ CREATE TABLE delivery_records (
     -- Electronic Signature Blob & Auditing
     signature_name VARCHAR(255), -- PII: Printed name of the person signing
     signature_image_url TEXT, -- Path to signed signature image (hosted on S3/R2 securely)
-    signature_hash VARCHAR(64), -- SHA-256 hash of: client_side_uuid + delivered_at + signature_name + driver_id
+    signature_hash VARCHAR(64), -- SHA-256 cryptographic hash of: signature image bytes/file content + client_side_uuid + delivered_at + signature_name + driver_id
     signature_consent_text TEXT, -- Legal consent statement accepted by signer
     signature_ip_address VARCHAR(45), -- IP address of signing device (IPv4/IPv6)
     signature_gps_latitude NUMERIC(9, 6), -- Verification GPS coordinates of signing event
@@ -140,6 +148,7 @@ CREATE TABLE delivery_records (
 
     -- Cost Inputs & Financials
     pricing_tier pricing_tier NOT NULL DEFAULT 'TIER_2',
+    applied_route_rate_id UUID REFERENCES route_rates(id), -- Tracks exact Tier 1 rate record applied
     pricing_is_manually_adjusted BOOLEAN NOT NULL DEFAULT FALSE,
     pricing_override_reason TEXT,
     pricing_base_rate NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
@@ -165,3 +174,4 @@ CREATE INDEX idx_delivery_records_waybill ON delivery_records(waybill_number);
 CREATE INDEX idx_delivery_records_status ON delivery_records(status);
 CREATE INDEX idx_delivery_records_customer ON delivery_records(customer_id);
 CREATE INDEX idx_delivery_records_driver ON delivery_records(driver_id);
+CREATE INDEX idx_route_rates_lookup ON route_rates(origin, destination, effective_date DESC);
