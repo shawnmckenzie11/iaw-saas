@@ -95,6 +95,29 @@ Do **not** run `npx expo start` from the repo root. That command only applies to
 
 ---
 
+## Production deployment (mckenzian.com)
+
+Live app target: **`https://iaw.mckenzian.com`** (courier PWA; marketing site stays at `mckenzian.com`).
+
+| URL | Purpose |
+|-----|---------|
+| https://iaw-saas.fly.dev | Fly default hostname (works now) |
+| https://iaw.mckenzian.com | Custom domain (after Cloudflare DNS step below) |
+
+Full setup guide: **[DEPLOY.md](./DEPLOY.md)**
+
+**Your one manual step:** In Cloudflare DNS for `mckenzian.com`, add:
+
+| Type | Name | Target | Proxy |
+|------|------|--------|-------|
+| CNAME | `iaw` | `iaw-saas.fly.dev` | DNS only (grey cloud) |
+
+Then verify: `fly certs check iaw.mckenzian.com --app iaw-saas`
+
+Redeploy after code changes: `fly deploy --app iaw-saas`
+
+---
+
 ## Business Domain Reference (Seed & Pre-populations)
 
 All seed data is **synthetic** — never use real customer PII in fixtures.

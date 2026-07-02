@@ -13,11 +13,11 @@ export default defineConfig({
         navigateFallback: '/index.html',
         runtimeCaching: [
           {
-            urlPattern: /^https?:\/\/localhost:3000\/.*/i,
+            urlPattern: ({ url }) => url.pathname.startsWith('/api'),
             handler: 'NetworkFirst',
             options: {
-              cacheName: 'app-shell',
-              networkTimeoutSeconds: 3,
+              cacheName: 'api-cache',
+              networkTimeoutSeconds: 5,
             },
           },
         ],
