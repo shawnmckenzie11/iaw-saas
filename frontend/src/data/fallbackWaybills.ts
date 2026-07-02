@@ -1,4 +1,4 @@
-import { Waybill } from '../pages/DashboardPage';
+import type { Waybill } from '../types/waybill';
 
 /** Fallback waybill data used when the API is unreachable offline. */
 export const FALLBACK_WAYBILLS: Waybill[] = [
@@ -9,7 +9,12 @@ export const FALLBACK_WAYBILLS: Waybill[] = [
     pickupLocationName: 'Wajax',
     pickupAddress: 'Sudbury, ON',
     dropoffDestinationName: 'Redpath Mine',
+    dropoffAddress: 'Onaping, ON',
     parcelDescription: 'Drill Bits',
+    priority: 'REGULAR',
+    podRequired: true,
+    capturedAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
   },
   {
     waybillNumber: 'W-002',
@@ -18,7 +23,11 @@ export const FALLBACK_WAYBILLS: Waybill[] = [
     pickupLocationName: 'Komatsu',
     pickupAddress: 'Sudbury, ON',
     dropoffDestinationName: 'Victoria Mine',
+    dropoffAddress: 'Sudbury, ON',
     parcelDescription: 'Hydraulic Parts',
+    priority: 'REGULAR',
+    capturedAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
   },
   {
     waybillNumber: 'W-003',
@@ -27,6 +36,10 @@ export const FALLBACK_WAYBILLS: Waybill[] = [
     pickupLocationName: 'Sling Choker',
     pickupAddress: 'Sudbury, ON',
     dropoffDestinationName: 'Creighton Mine',
+    dropoffAddress: 'Sudbury, ON',
     parcelDescription: 'Cables',
+    priority: 'REGULAR',
+    capturedAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
   },
 ];

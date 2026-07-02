@@ -3,7 +3,7 @@ import { DeliveryRecord, DeliveryStatus, Prisma } from '@prisma/client';
 /** Valid status progression for waybill lifecycle events. */
 const VALID_TRANSITIONS: Record<string, DeliveryStatus[]> = {
   WAYBILL_CREATED: ['DRAFT'],
-  WAYBILL_ASSIGNED: ['DRAFT'],
+  WAYBILL_ASSIGNED: ['DRAFT', 'PICKED_UP'],
   WAYBILL_PICKED_UP: ['DRAFT', 'PICKED_UP'],
   WAYBILL_DELIVERED: ['PICKED_UP', 'DELIVERED'],
   DISPATCHER_OVERRIDE: ['DRAFT', 'PICKED_UP', 'DELIVERED', 'INVOICED'],
@@ -58,9 +58,14 @@ export function projectEventOntoRecord(
   switch (eventType) {
     case 'WAYBILL_CREATED':
       update.status = 'DRAFT';
+      if (typeof data.driverId === 'string') {
+        update.driver = { connect: { id: data.driverId } };
+      }
       break;
     case 'WAYBILL_ASSIGNED':
-      if (typeof data.driverId === 'string') {
+      if (data.driverId === null) {
+        update.driver = { disconnect: true };
+      } else if (typeof data.driverId === 'string') {
         update.driver = { connect: { id: data.driverId } };
       }
       break;
@@ -68,6 +73,50 @@ export function projectEventOntoRecord(
       update.status = 'PICKED_UP';
       if (typeof data.pickedUpAt === 'string') {
         update.capturedAt = new Date(data.pickedUpAt);
+      }
+      if (typeof data.pickupLocationName === 'string') {
+        update.pickupLocationName = data.pickupLocationName;
+      }
+      if (typeof data.pickupAddress === 'string') {
+        update.pickupAddress = data.pickupAddress;
+      }
+      if (typeof data.pickupContactName === 'string') {
+        update.pickupContactName = data.pickupContactName;
+      }
+      if (typeof data.pickupContactPhone === 'string') {
+        update.pickupContactPhone = data.pickupContactPhone;
+      }
+      if (typeof data.dropoffDestinationName === 'string') {
+        update.dropoffDestinationName = data.dropoffDestinationName;
+      }
+      if (typeof data.dropoffAddress === 'string') {
+        update.dropoffAddress = data.dropoffAddress;
+      }
+      if (typeof data.dropoffContactName === 'string') {
+        update.dropoffContactName = data.dropoffContactName;
+      }
+      if (typeof data.dropoffContactPhone === 'string') {
+        update.dropoffContactPhone = data.dropoffContactPhone;
+      }
+      if (typeof data.parcelDescription === 'string') {
+        update.parcelDescription = data.parcelDescription;
+      }
+      if (typeof data.parcelWeightClass === 'string') {
+        update.parcelWeightClass = data.parcelWeightClass;
+      }
+      if (typeof data.vehicleType === 'string') {
+        update.vehicleType = data.vehicleType as DeliveryRecord['vehicleType'];
+      }
+      if (typeof data.priority === 'string') {
+        update.priority = data.priority as DeliveryRecord['priority'];
+      }
+      if (typeof data.calculatedPrice === 'number') {
+        update.pricingTotalCost = data.calculatedPrice;
+      }
+      if (data.podRequired === true) {
+        update.additionalComments = '__podRequired';
+      } else if (data.podRequired === false) {
+        update.additionalComments = null;
       }
       break;
     case 'WAYBILL_DELIVERED':
@@ -82,6 +131,10 @@ export function projectEventOntoRecord(
     case 'DISPATCHER_OVERRIDE':
       if (typeof data.status === 'string') {
         update.status = data.status as DeliveryStatus;
+      }
+      if (typeof data.pricingTotalCost === 'number') {
+        update.pricingTotalCost = data.pricingTotalCost;
+        update.pricingIsManuallyAdjusted = true;
       }
       break;
     case 'DISPATCHER_CORRECTION':
@@ -123,5 +176,9 @@ export function serializeWaybill(record: DeliveryRecord) {
     deliveredAt: record.deliveredAt?.toISOString() ?? null,
     signatureName: record.signatureName,
     signatureImageUrl: record.signatureImageUrl,
+    additionalComments: record.additionalComments,
+    podRequired: record.additionalComments === '__podRequired',
+    calculatedPrice: Number(record.pricingTotalCost),
+    pricingTotalCost: Number(record.pricingTotalCost),
   };
 }

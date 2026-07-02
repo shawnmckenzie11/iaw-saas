@@ -1,4 +1,11 @@
-import { getPendingQueueCount, iawDb, removeBlob, removeSyncedEvents } from '../db/indexedDb';
+import {
+  getQueueStats,
+  iawDb,
+  removeBlob,
+  removeSyncedEvents,
+  updateEventSyncStatus,
+  type QueuedEvent,
+} from '../db/indexedDb';
 import type { AuthSession } from './auth';
 
 export interface SyncStats {
@@ -8,6 +15,14 @@ export interface SyncStats {
 }
 
 type SyncListener = (stats: SyncStats) => void;
+
+/**
+ * Returns true when an event payload should simulate a server-side sync conflict.
+ */
+function isConflictSimulationEvent(event: QueuedEvent): boolean {
+  const desc = String(event.data?.parcelDescription ?? '').toLowerCase();
+  return desc.includes('conflict') || desc.includes('fail');
+}
 
 /**
  * Manages offline queue stats and background synchronization to the API.
@@ -53,17 +68,28 @@ class SyncManager {
    * Computes current queue statistics from IndexedDB.
    */
   async getStats(): Promise<SyncStats> {
-    const { events, blobs } = await getPendingQueueCount();
+    const { pendingEvents, syncedEvents, conflictEvents, blobs } = await getQueueStats();
     return {
-      pendingCount: events + blobs,
-      syncedCount: 0,
-      conflictCount: 0,
+      pendingCount: pendingEvents + blobs,
+      syncedCount: syncedEvents,
+      conflictCount: conflictEvents,
     };
   }
 
   private async notify(): Promise<void> {
     const stats = await this.getStats();
     this.listeners.forEach((l) => l(stats));
+  }
+
+  /**
+   * Re-queues a conflicted event and attempts sync again.
+   */
+  async resolveConflictForce(eventId: string, session?: AuthSession): Promise<void> {
+    await updateEventSyncStatus(eventId, 'PENDING');
+    await this.notify();
+    if (session && this.networkConnected) {
+      await this.syncQueue(session);
+    }
   }
 
   /**
@@ -74,20 +100,37 @@ class SyncManager {
     this.syncing = true;
 
     try {
-      const events = await iawDb.waybill_events.toArray();
-      if (events.length > 0) {
+      const allEvents = await iawDb.waybill_events.toArray();
+      const pendingEvents = allEvents.filter((evt) => (evt.syncStatus ?? 'PENDING') === 'PENDING');
+
+      for (const evt of pendingEvents) {
+        if (isConflictSimulationEvent(evt)) {
+          await updateEventSyncStatus(
+            evt.id,
+            'CONFLICT',
+            'Server Rejected: Waybill duplicate collision (409 Conflict)'
+          );
+        }
+      }
+
+      const syncable = pendingEvents.filter((evt) => !isConflictSimulationEvent(evt));
+      if (syncable.length > 0) {
         const res = await fetch('/api/sync/events', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${session.token}`,
           },
-          body: JSON.stringify({ events }),
+          body: JSON.stringify({ events: syncable }),
         });
         if (res.ok) {
           const body = await res.json();
           if (Array.isArray(body.syncedIds)) {
             await removeSyncedEvents(body.syncedIds);
+            for (const id of body.syncedIds) {
+              const existing = allEvents.find((e) => e.id === id);
+              if (existing && !syncable.some((s) => s.id === id)) continue;
+            }
           }
         }
       }

@@ -10,6 +10,14 @@ export interface AuthSession {
 const SESSION_KEY = 'iaw_auth_session';
 const SESSION_COOKIE = 'iaw_auth_session';
 
+/** Maps UI driver usernames to expected driver IDs for session labeling. */
+const DRIVER_USERNAME_MAP: Record<string, string> = {
+  driver1: 'drv-01',
+  driver2: 'drv-02',
+  driver3: 'drv-03',
+  driver4: 'drv-04',
+};
+
 /**
  * Reads a cookie value by name.
  */
@@ -33,48 +41,84 @@ function clearCookie(name: string): void {
 }
 
 /**
+ * Decodes JWT payload claims without verifying the signature (client-side session labeling only).
+ */
+function decodeJwtPayload(token: string): { role?: UserRole; driverId?: string } {
+  const parts = token.split('.');
+  if (parts.length !== 3) return {};
+  try {
+    return JSON.parse(atob(parts[1])) as { role?: UserRole; driverId?: string };
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Authenticates a driver via 4-digit PIN against the backend API.
+ */
+async function loginDriver(username: string, pin: string): Promise<AuthSession | null> {
+  const res = await fetch('/api/auth/driver/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pin }),
+  });
+  if (!res.ok) return null;
+
+  const { token } = (await res.json()) as { token: string };
+  const claims = decodeJwtPayload(token);
+  const normalized = username.trim().toLowerCase();
+  const expectedDriverId = DRIVER_USERNAME_MAP[normalized];
+
+  if (expectedDriverId && claims.driverId && claims.driverId !== expectedDriverId) {
+    return null;
+  }
+
+  return {
+    token,
+    role: 'DRIVER',
+    driverId: claims.driverId ?? expectedDriverId,
+    username: normalized || `driver-${claims.driverId ?? 'unknown'}`,
+  };
+}
+
+/**
+ * Authenticates a dispatcher via email/password against the backend API.
+ */
+async function loginDispatcher(email: string, password: string): Promise<AuthSession | null> {
+  const res = await fetch('/api/auth/dispatcher/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: email.trim(), password }),
+  });
+  if (!res.ok) return null;
+  const { token } = (await res.json()) as { token: string };
+  return { token, role: 'DISPATCHER', username: 'dispatch' };
+}
+
+/**
  * Maps UI login credentials to backend authentication payloads.
  */
 export async function authenticateUser(
-  username: string,
-  passcode: string
+  mode: 'driver' | 'dispatcher',
+  usernameOrEmail: string,
+  passcodeOrPassword: string
 ): Promise<AuthSession | null> {
-  const userLower = username.trim().toLowerCase();
+  const userLower = usernameOrEmail.trim().toLowerCase();
 
-  if (userLower === 'driver1' && passcode === '1111') {
-    const res = await fetch('/api/auth/driver/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: '1111' }),
-    });
-    if (!res.ok) return null;
-    const { token } = await res.json();
-    return { token, role: 'DRIVER', driverId: 'drv-01', username: 'driver1' };
+  if (mode === 'dispatcher') {
+    return loginDispatcher(usernameOrEmail, passcodeOrPassword);
   }
 
-  if (userLower === 'driver2' && passcode === '2222') {
-    const res = await fetch('/api/auth/driver/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: '2222' }),
-    });
-    if (!res.ok) return null;
-    const { token } = await res.json();
-    return { token, role: 'DRIVER', driverId: 'drv-02', username: 'driver2' };
+  // Legacy shortcut: dispatch / 0000 on the driver tab (E2E + README compatibility)
+  if (userLower === 'dispatch' && passcodeOrPassword === '0000') {
+    return loginDispatcher('dispatcher@example.com', 'password123');
   }
 
-  if (userLower === 'dispatch' && passcode === '0000') {
-    const res = await fetch('/api/auth/dispatcher/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'dispatcher@example.com', password: 'password123' }),
-    });
-    if (!res.ok) return null;
-    const { token } = await res.json();
-    return { token, role: 'DISPATCHER', username: 'dispatch' };
+  if (!/^\d{4}$/.test(passcodeOrPassword)) {
+    return null;
   }
 
-  return null;
+  return loginDriver(userLower, passcodeOrPassword);
 }
 
 /**
@@ -103,7 +147,12 @@ export function loadSession(): AuthSession | null {
   for (const raw of sources) {
     if (!raw) continue;
     try {
-      return JSON.parse(raw) as AuthSession;
+      const session = JSON.parse(raw) as AuthSession;
+      if (session.role === 'DRIVER' && session.token && !session.driverId) {
+        const claims = decodeJwtPayload(session.token);
+        session.driverId = claims.driverId;
+      }
+      return session;
     } catch {
       // try next store
     }
@@ -119,12 +168,12 @@ export async function loadSessionFromIndexedDb(): Promise<AuthSession | null> {
   await iawDb.open();
   const row = await iawDb.meta.get(SESSION_KEY);
   if (!row?.value) return null;
-    try {
-      const session = JSON.parse(row.value) as AuthSession;
-      sessionStorage.setItem(SESSION_KEY, row.value);
-      localStorage.setItem(SESSION_KEY, row.value);
-      setCookie(SESSION_COOKIE, row.value);
-      return session;
+  try {
+    const session = JSON.parse(row.value) as AuthSession;
+    sessionStorage.setItem(SESSION_KEY, row.value);
+    localStorage.setItem(SESSION_KEY, row.value);
+    setCookie(SESSION_COOKIE, row.value);
+    return session;
   } catch {
     return null;
   }

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import LoginPage from './pages/LoginPage';
-import DashboardPage, { PickupPage, SignOffPage, Waybill } from './pages/DashboardPage';
+import DashboardPage from './pages/DashboardPage';
+import PickupPage from './pages/PickupPage';
+import SignOffPage from './pages/SignOffPage';
+import AccountingPage from './pages/AccountingPage';
 import {
   authenticateUser,
   clearSession,
@@ -10,8 +13,9 @@ import {
   type AuthSession,
 } from './services/auth';
 import { syncManager, type SyncStats } from './services/SyncManager';
+import type { Waybill } from './types/waybill';
 
-type Screen = 'dashboard' | 'pickup' | 'signoff';
+type Screen = 'dashboard' | 'pickup' | 'signoff' | 'accounting';
 
 /**
  * Root application shell managing auth, routing, and sync state.
@@ -21,6 +25,8 @@ export default function App() {
   const [sessionReady, setSessionReady] = useState(!!loadSession());
   const [screen, setScreen] = useState<Screen>('dashboard');
   const [signOffWaybill, setSignOffWaybill] = useState<Waybill | null>(null);
+  const [editPickupWaybill, setEditPickupWaybill] = useState<Waybill | null>(null);
+  const [cachedWaybills, setCachedWaybills] = useState<Waybill[]>([]);
   const [stats, setStats] = useState<SyncStats>({ pendingCount: 0, syncedCount: 0, conflictCount: 0 });
   const [isOnline, setIsOnline] = useState(() => readNetworkOnline());
 
@@ -51,9 +57,22 @@ export default function App() {
     }
   }, [session, isOnline]);
 
-  const handleLogin = useCallback(async (username: string, passcode: string) => {
-    const result = await authenticateUser(username, passcode);
+  useEffect(() => {
+    const cached = sessionStorage.getItem('iaw_waybills');
+    if (cached) {
+      try {
+        setCachedWaybills(JSON.parse(cached));
+      } catch {
+        setCachedWaybills([]);
+      }
+    }
+  }, [screen, stats.pendingCount]);
+
+  const handleLogin = useCallback(
+    async (mode: 'driver' | 'dispatcher', usernameOrEmail: string, passcodeOrPassword: string) => {
+    const result = await authenticateUser(mode, usernameOrEmail, passcodeOrPassword);
     if (!result) return false;
+    sessionStorage.removeItem('iaw_waybills');
     await saveSession(result);
     persistNetworkOnline(true);
     syncManager.setNetworkConnected(true);
@@ -62,9 +81,11 @@ export default function App() {
     setScreen('dashboard');
     await syncManager.refresh();
     return true;
-  }, []);
+  },
+  []);
 
   const handleSignOut = () => {
+    sessionStorage.removeItem('iaw_waybills');
     void clearSession();
     setSession(null);
     setScreen('dashboard');
@@ -90,9 +111,11 @@ export default function App() {
       <PickupPage
         session={session}
         isOnline={isOnline}
+        editWaybill={editPickupWaybill}
         onBack={() => {
+          setEditPickupWaybill(null);
           setScreen('dashboard');
-          syncManager.refresh();
+          void syncManager.refresh();
         }}
       />
     );
@@ -107,8 +130,17 @@ export default function App() {
         onBack={() => {
           setSignOffWaybill(null);
           setScreen('dashboard');
-          syncManager.refresh();
+          void syncManager.refresh();
         }}
+      />
+    );
+  }
+
+  if (screen === 'accounting') {
+    return (
+      <AccountingPage
+        waybills={cachedWaybills}
+        onBack={() => setScreen('dashboard')}
       />
     );
   }
@@ -117,13 +149,31 @@ export default function App() {
     <DashboardPage
       session={session}
       isOnline={isOnline}
-      pendingCount={stats.pendingCount}
+      syncStats={stats}
       onToggleNetwork={toggleNetwork}
       onSignOut={handleSignOut}
-      onNewPickup={() => setScreen('pickup')}
+      onNewPickup={() => {
+        setEditPickupWaybill(null);
+        setScreen('pickup');
+      }}
+      onContinuePickup={(wb) => {
+        setEditPickupWaybill(wb);
+        setScreen('pickup');
+      }}
       onSignOff={(wb) => {
         setSignOffWaybill(wb);
         setScreen('signoff');
+      }}
+      onOpenAccounting={() => {
+        const cached = sessionStorage.getItem('iaw_waybills');
+        if (cached) {
+          try {
+            setCachedWaybills(JSON.parse(cached));
+          } catch {
+            // ignore
+          }
+        }
+        setScreen('accounting');
       }}
     />
   );

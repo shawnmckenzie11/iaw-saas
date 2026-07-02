@@ -22,6 +22,17 @@ app.get('/health', async (_req, res) => {
   }
 });
 
+/** Points browser users at the Vite PWA — this server is API-only. */
+app.get('/', (_req, res) => {
+  res.status(200).json({
+    service: 'iaw-saas API',
+    message: 'This is the backend API. Open the driver/dispatch UI at http://localhost:3000',
+    health: '/health',
+    auth: '/api/auth',
+    waybills: '/api/waybills',
+  });
+});
+
 app.use('/api/auth', authRoutes);
 app.use('/api/waybills', waybillRoutes);
 app.use('/api/sync', syncRoutes);

@@ -93,10 +93,12 @@ export async function createWaybillWithEvent(input: {
   dropoffDestinationName: string;
   dropoffAddress?: string;
   parcelDescription: string;
+  parcelWeightClass?: string;
   parcelQuantity?: number;
   priority?: string;
   vehicleType?: string;
-  driverId?: string;
+  driverId?: string | null;
+  pricingTotalCost?: number;
 }) {
   const now = new Date();
 
@@ -111,11 +113,13 @@ export async function createWaybillWithEvent(input: {
         dropoffDestinationName: input.dropoffDestinationName,
         dropoffAddress: input.dropoffAddress ?? input.dropoffDestinationName,
         parcelDescription: input.parcelDescription,
+        parcelWeightClass: input.parcelWeightClass ?? null,
         parcelQuantity: input.parcelQuantity ?? 1,
         priority: (input.priority as 'REGULAR' | 'RUSH') ?? 'REGULAR',
         vehicleType: (input.vehicleType as 'CAR' | 'TRUCK') ?? 'CAR',
         capturedAt: now,
         driverId: input.driverId ?? null,
+        pricingTotalCost: input.pricingTotalCost ?? 0,
       },
     });
 
@@ -199,8 +203,17 @@ export async function syncEventsBatch(
         clientSideUuid: evt.clientSideUuid,
         waybillNumber: evt.waybillNumber,
         pickupLocationName: String(evt.data?.pickupLocationName ?? 'Unknown'),
-        dropoffDestinationName: String(evt.data?.dropoffDestinationName ?? 'Unknown'),
+        pickupAddress: typeof evt.data?.pickupAddress === 'string' ? evt.data.pickupAddress : undefined,
+        dropoffDestinationName: String(evt.data?.dropoffDestinationName ?? 'Pending Dropoff'),
+        dropoffAddress: typeof evt.data?.dropoffAddress === 'string' ? evt.data.dropoffAddress : undefined,
         parcelDescription: String(evt.data?.parcelDescription ?? 'Package'),
+        parcelWeightClass:
+          typeof evt.data?.parcelWeightClass === 'string' ? evt.data.parcelWeightClass : undefined,
+        priority: typeof evt.data?.priority === 'string' ? evt.data.priority : undefined,
+        vehicleType: typeof evt.data?.vehicleType === 'string' ? evt.data.vehicleType : undefined,
+        driverId: typeof evt.data?.driverId === 'string' ? evt.data.driverId : null,
+        pricingTotalCost:
+          typeof evt.data?.calculatedPrice === 'number' ? evt.data.calculatedPrice : undefined,
       });
       syncedIds.push(evt.id);
       continue;
@@ -216,8 +229,13 @@ export async function syncEventsBatch(
         clientSideUuid: evt.clientSideUuid,
         waybillNumber: evt.waybillNumber,
         pickupLocationName: String(evt.data?.pickupLocationName ?? evt.waybillNumber),
-        dropoffDestinationName: String(evt.data?.dropoffDestinationName ?? 'Destination'),
+        pickupAddress: typeof evt.data?.pickupAddress === 'string' ? evt.data.pickupAddress : undefined,
+        dropoffDestinationName: String(evt.data?.dropoffDestinationName ?? 'Pending Dropoff'),
+        dropoffAddress: typeof evt.data?.dropoffAddress === 'string' ? evt.data.dropoffAddress : undefined,
         parcelDescription: String(evt.data?.parcelDescription ?? 'Package'),
+        parcelWeightClass:
+          typeof evt.data?.parcelWeightClass === 'string' ? evt.data.parcelWeightClass : undefined,
+        driverId: typeof evt.data?.driverId === 'string' ? evt.data.driverId : null,
       });
     }
 

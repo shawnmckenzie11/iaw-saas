@@ -11,6 +11,26 @@ import { serializeWaybill } from '../services/eventProjector';
 const router = Router();
 
 /**
+ * GET /api/waybills — Lists waybills visible to the authenticated user (RBAC).
+ */
+router.get('/', requireAuth, async (req: Request, res: Response) => {
+  const where =
+    req.auth!.role === 'DRIVER'
+      ? {
+          OR: [{ driverId: req.auth!.driverId }, { driverId: null }],
+        }
+      : {};
+
+  const records = await prisma.deliveryRecord.findMany({
+    where,
+    orderBy: { capturedAt: 'desc' },
+    take: 500,
+  });
+
+  res.json(records.map(serializeWaybill));
+});
+
+/**
  * GET /api/waybills/:waybillNumber — Returns a waybill if the caller is authorized.
  */
 router.get('/:waybillNumber', requireAuth, async (req: Request, res: Response) => {

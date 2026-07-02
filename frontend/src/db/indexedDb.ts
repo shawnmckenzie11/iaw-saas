@@ -1,5 +1,7 @@
 import Dexie, { Table } from 'dexie';
 
+export type EventSyncStatus = 'PENDING' | 'SYNCED' | 'CONFLICT';
+
 export interface QueuedEvent {
   id: string;
   clientSideUuid: string;
@@ -7,6 +9,8 @@ export interface QueuedEvent {
   eventType: string;
   timestamp: string;
   data: Record<string, unknown>;
+  syncStatus?: EventSyncStatus;
+  syncError?: string;
 }
 
 export interface QueuedBlob {
@@ -45,19 +49,52 @@ export const iawDb = new IawDatabase();
  * Returns the count of pending items across both sync queues.
  */
 export async function getPendingQueueCount(): Promise<{ events: number; blobs: number }> {
+  const stats = await getQueueStats();
+  return { events: stats.pendingEvents, blobs: stats.blobs };
+}
+
+export interface QueueStats {
+  pendingEvents: number;
+  syncedEvents: number;
+  conflictEvents: number;
+  blobs: number;
+}
+
+/**
+ * Aggregates IndexedDB queue counts by sync lifecycle state.
+ */
+export async function getQueueStats(): Promise<QueueStats> {
   await iawDb.open();
-  const [events, blobs] = await Promise.all([
-    iawDb.waybill_events.count(),
-    iawDb.media_blobs.count(),
-  ]);
-  return { events, blobs };
+  const allEvents = await iawDb.waybill_events.toArray();
+  let pendingEvents = 0;
+  let syncedEvents = 0;
+  let conflictEvents = 0;
+  for (const evt of allEvents) {
+    const status = evt.syncStatus ?? 'PENDING';
+    if (status === 'SYNCED') syncedEvents += 1;
+    else if (status === 'CONFLICT') conflictEvents += 1;
+    else pendingEvents += 1;
+  }
+  const blobs = await iawDb.media_blobs.count();
+  return { pendingEvents, syncedEvents, conflictEvents, blobs };
 }
 
 /**
  * Adds a waybill event to the offline text sync queue.
  */
 export async function queueEvent(event: QueuedEvent): Promise<void> {
-  await iawDb.waybill_events.put(event);
+  await iawDb.waybill_events.put({ syncStatus: 'PENDING', ...event });
+}
+
+/**
+ * Updates the sync lifecycle state for a queued event.
+ */
+export async function updateEventSyncStatus(
+  id: string,
+  syncStatus: EventSyncStatus,
+  syncError?: string
+): Promise<void> {
+  await iawDb.waybill_events.update(id, { syncStatus, syncError });
 }
 
 /**

@@ -1,42 +1,120 @@
-import { useEffect, useRef, useState, FormEvent } from 'react';
-import { queueBlob, queueEvent } from '../db/indexedDb';
-import type { AuthSession } from '../services/auth';
+import { useEffect, useMemo, useState } from 'react';
+import { iawDb, queueEvent } from '../db/indexedDb';
 import { FALLBACK_WAYBILLS } from '../data/fallbackWaybills';
-import { syncManager } from '../services/SyncManager';
+import { DRIVERS, driverFirstName } from '../data/drivers';
+import type { AuthSession } from '../services/auth';
+import { syncManager, type SyncStats } from '../services/SyncManager';
+import type { Waybill } from '../types/waybill';
+import { waybillPrice } from '../types/waybill';
+import { formatWaybillDate, formatWaybillTime } from '../utils/formatters';
+import { calculatePrice, getLocationShortName } from '../utils/pricing';
+import { mergeQueuedWaybills } from '../utils/queuedWaybills';
 
-export interface Waybill {
-  waybillNumber: string;
-  status: string;
-  driverId: string | null;
-  pickupLocationName: string;
-  pickupAddress: string;
-  dropoffDestinationName: string;
-  parcelDescription: string;
-}
+export type { Waybill };
+
+type DispatchTab = 'ACTIVE' | 'PENDING_PRICE' | 'COMPLETED';
 
 interface DashboardProps {
   session: AuthSession;
   isOnline: boolean;
-  pendingCount: number;
+  syncStats: SyncStats;
   onToggleNetwork: () => void;
   onSignOut: () => void;
   onNewPickup: () => void;
+  onContinuePickup: (waybill: Waybill) => void;
   onSignOff: (waybill: Waybill) => void;
+  onOpenAccounting: () => void;
 }
 
 /**
- * Driver and dispatcher dashboard with sync counters and waybill list.
+ * Dispatcher assignment control: always shows driver chips so jobs with a
+ * pre-set driver (driver-created) can be reassigned to another driver.
+ */
+function DispatchAssignmentCell({
+  wb,
+  onAssign,
+}: {
+  wb: Waybill;
+  onAssign: (driverId: string | null) => void;
+}) {
+  if (wb.status === 'DELIVERED') {
+    return <span className="driver-chip-label">{driverFirstName(wb.driverId)}</span>;
+  }
+
+  return (
+    <div className="assigned-row">
+      <div className="driver-assign-chips">
+        {DRIVERS.map((driver) => (
+          <button
+            key={driver.id}
+            type="button"
+            className={`driver-assign-chip${wb.driverId === driver.id ? ' is-active' : ''}`}
+            title={driver.firstName}
+            aria-label={`Assign ${driver.firstName}`}
+            aria-pressed={wb.driverId === driver.id}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (wb.driverId !== driver.id) {
+                onAssign(driver.id);
+              }
+            }}
+          >
+            {driver.firstName[0]}
+          </button>
+        ))}
+      </div>
+      {wb.driverId ? (
+        <button
+          type="button"
+          className="btn-unassign"
+          title="Unassign driver"
+          aria-label="Unassign driver"
+          onClick={(e) => {
+            e.stopPropagation();
+            onAssign(null);
+          }}
+        >
+          X
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Returns a human-readable operational status label for dashboard tables.
+ */
+function statusLabel(status: string): string {
+  if (status === 'DELIVERED') return 'Completed';
+  if (status === 'DRAFT') return 'Pending-Pickup';
+  if (status === 'PICKED_UP') return 'Pending-Delivery';
+  return status;
+}
+
+/**
+ * Driver and dispatcher dashboard with tabular waybill views and sync counters.
  */
 export default function DashboardPage({
   session,
   isOnline,
-  pendingCount,
+  syncStats,
   onToggleNetwork,
   onSignOut,
   onNewPickup,
+  onContinuePickup,
   onSignOff,
+  onOpenAccounting,
 }: DashboardProps) {
   const [waybills, setWaybills] = useState<Waybill[]>([]);
+  const [dispatchTab, setDispatchTab] = useState<DispatchTab>('ACTIVE');
+  const [showDriverRoster, setShowDriverRoster] = useState(true);
+  const [completedSearchQuery, setCompletedSearchQuery] = useState('');
+  const [completedStartDate, setCompletedStartDate] = useState('');
+  const [completedEndDate, setCompletedEndDate] = useState('');
+  const [pendingPriceWaybill, setPendingPriceWaybill] = useState<Waybill | null>(null);
+  const [deliverConfirmWaybill, setDeliverConfirmWaybill] = useState<Waybill | null>(null);
+  const [quotePrice, setQuotePrice] = useState('');
+  const [conflictEvents, setConflictEvents] = useState<Array<{ id: string; waybillNumber: string }>>([]);
   const isDispatcher = session.role === 'DISPATCHER';
 
   useEffect(() => {
@@ -51,46 +129,298 @@ export default function DashboardPage({
   }, []);
 
   useEffect(() => {
-    const load = async () => {
+    void iawDb.waybill_events.toArray().then((rows) => {
+      setConflictEvents(
+        rows
+          .filter((r) => r.syncStatus === 'CONFLICT')
+          .map((r) => ({ id: r.id, waybillNumber: r.waybillNumber }))
+      );
+    });
+  }, [syncStats.conflictCount, syncStats.pendingCount]);
+
+  /**
+   * Persists merged API + local queue waybills to state and session cache.
+   */
+  const applyWaybillList = async (loaded: Waybill[]) => {
+    const merged = await mergeQueuedWaybills(loaded);
+    setWaybills(merged);
+    sessionStorage.setItem('iaw_waybills', JSON.stringify(merged));
+  };
+
+  /**
+   * Loads waybills from API with sessionStorage fallback for offline use.
+   */
+  const loadWaybills = async () => {
+    let loaded: Waybill[] = [];
+
+    if (isOnline) {
+      try {
+        const res = await fetch('/api/waybills', {
+          headers: { Authorization: `Bearer ${session.token}` },
+        });
+        if (res.ok) {
+          loaded = (await res.json()) as Waybill[];
+        }
+      } catch {
+        // fall through to cache below
+      }
+    }
+
+    if (loaded.length === 0) {
       const cached = sessionStorage.getItem('iaw_waybills');
       if (cached) {
         try {
-          setWaybills(JSON.parse(cached));
+          loaded = JSON.parse(cached) as Waybill[];
         } catch {
           // ignore corrupt cache
         }
       }
+    }
 
-      const numbers = ['W-001', 'W-002', 'W-003'];
-      const loaded: Waybill[] = [];
-      for (const num of numbers) {
-        try {
-          const res = await fetch(`/api/waybills/${num}`, {
-            headers: { Authorization: `Bearer ${session.token}` },
+    if (loaded.length === 0) {
+      loaded = FALLBACK_WAYBILLS;
+    }
+
+    await applyWaybillList(loaded);
+  };
+
+  useEffect(() => {
+    void loadWaybills();
+  }, [session.token, syncStats.pendingCount, syncStats.syncedCount]);
+
+  /** Poll for dispatcher assignment updates while the driver dashboard is open. */
+  useEffect(() => {
+    if (isDispatcher || !isOnline) return;
+    const interval = window.setInterval(() => {
+      void loadWaybills();
+    }, 12000);
+    const onFocus = () => void loadWaybills();
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('pageshow', onFocus);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('pageshow', onFocus);
+    };
+  }, [isDispatcher, isOnline, session.token]);
+
+  /**
+   * Posts a driver assignment event and refreshes local waybill cache.
+   */
+  const handleAssignDriver = async (wb: Waybill, driverId: string | null) => {
+    if (!isDispatcher) return;
+
+    setWaybills((prev) => {
+      const next = prev.map((row) =>
+        row.waybillNumber === wb.waybillNumber ? { ...row, driverId } : row
+      );
+      sessionStorage.setItem('iaw_waybills', JSON.stringify(next));
+      return next;
+    });
+
+    try {
+      const res = await fetch(`/api/waybills/${wb.waybillNumber}/events`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.token}`,
+        },
+        body: JSON.stringify({
+          eventType: 'WAYBILL_ASSIGNED',
+          data: { driverId },
+        }),
+      });
+      if (!res.ok) {
+        await loadWaybills();
+        return;
+      }
+
+      await loadWaybills();
+    } catch {
+      // optimistic update already applied for offline responsiveness
+    }
+  };
+
+  /**
+   * Saves a dispatcher manual price quote via override event.
+   */
+  const handleConfirmQuotePrice = async () => {
+    if (!pendingPriceWaybill || !quotePrice.trim()) return;
+    const priceVal = parseFloat(quotePrice);
+    if (Number.isNaN(priceVal) || priceVal < 0) return;
+
+    try {
+      await fetch(`/api/waybills/${pendingPriceWaybill.waybillNumber}/events`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.token}`,
+        },
+        body: JSON.stringify({
+          eventType: 'DISPATCHER_OVERRIDE',
+          data: { pricingTotalCost: priceVal },
+        }),
+      });
+      setWaybills((prev) => {
+        const next = prev.map((row) =>
+          row.waybillNumber === pendingPriceWaybill.waybillNumber
+            ? { ...row, calculatedPrice: priceVal, pricingTotalCost: priceVal }
+            : row
+        );
+        sessionStorage.setItem('iaw_waybills', JSON.stringify(next));
+        return next;
+      });
+    } catch {
+      // offline placeholder update
+      setWaybills((prev) => {
+        const next = prev.map((row) =>
+          row.waybillNumber === pendingPriceWaybill.waybillNumber
+            ? { ...row, calculatedPrice: priceVal, pricingTotalCost: priceVal }
+            : row
+        );
+        sessionStorage.setItem('iaw_waybills', JSON.stringify(next));
+        return next;
+      });
+    }
+
+    setPendingPriceWaybill(null);
+    setQuotePrice('');
+  };
+
+  /**
+   * Marks a non-POD waybill delivered after driver confirmation (no signature required).
+   */
+  const handleConfirmDelivery = async (wb: Waybill) => {
+    const eventId = crypto.randomUUID();
+    const deliveredAt = new Date().toISOString();
+
+    await queueEvent({
+      id: eventId,
+      clientSideUuid: eventId,
+      waybillNumber: wb.waybillNumber,
+      eventType: 'WAYBILL_DELIVERED',
+      timestamp: deliveredAt,
+      data: { deliveredAt },
+    });
+
+    await syncManager.refresh();
+
+    if (isOnline && session.token) {
+      await fetch(`/api/waybills/${wb.waybillNumber}/events`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.token}`,
+        },
+        body: JSON.stringify({
+          eventType: 'WAYBILL_DELIVERED',
+          data: { deliveredAt },
+        }),
+      }).catch(() => undefined);
+      void syncManager.syncQueue(session);
+    }
+
+    setWaybills((prev) => {
+      const next = prev.map((row) =>
+        row.waybillNumber === wb.waybillNumber
+          ? { ...row, status: 'DELIVERED', deliveredAt }
+          : row
+      );
+      sessionStorage.setItem('iaw_waybills', JSON.stringify(next));
+      return next;
+    });
+    setDeliverConfirmWaybill(null);
+  };
+
+  /**
+   * Routes a driver row action to pickup, POD sign-off, or quick delivery confirmation.
+   */
+  const handleDriverAction = (wb: Waybill) => {
+    const needsPod = wb.podRequired === true || wb.additionalComments === '__podRequired';
+
+    if (wb.status === 'DRAFT') {
+      onContinuePickup(wb);
+      return;
+    }
+    if (wb.status === 'PICKED_UP') {
+      if (needsPod) {
+        onSignOff(wb);
+      } else {
+        setDeliverConfirmWaybill(wb);
+      }
+    }
+  };
+
+  const isAssignedToMe = (wb: Waybill): boolean => {
+    if (!session.driverId) return false;
+    return wb.driverId === session.driverId;
+  };
+
+  const scopedWaybills = useMemo(() => {
+    if (isDispatcher) return waybills;
+    return waybills.filter((w) => isAssignedToMe(w));
+  }, [isDispatcher, session.driverId, waybills]);
+
+  const visibleWaybills = useMemo(() => {
+    if (!isDispatcher) {
+      return scopedWaybills.filter(
+        (w) => w.status === 'DRAFT' || w.status === 'PICKED_UP' || w.status === 'DELIVERED'
+      );
+    }
+
+    if (dispatchTab === 'COMPLETED') {
+      let list = scopedWaybills.filter((w) => w.status === 'DELIVERED' && waybillPrice(w) > 0);
+
+      if (completedSearchQuery.trim()) {
+        const q = completedSearchQuery.toLowerCase().trim();
+        list = list.filter(
+          (w) =>
+            w.waybillNumber.toLowerCase().includes(q) ||
+            w.pickupLocationName.toLowerCase().includes(q) ||
+            w.dropoffDestinationName.toLowerCase().includes(q)
+        );
+      }
+
+      if (completedStartDate.trim()) {
+        const start = new Date(completedStartDate.trim()).getTime();
+        if (!Number.isNaN(start)) {
+          list = list.filter((w) => {
+            const ts = w.createdAt ?? w.capturedAt;
+            return ts ? new Date(ts).getTime() >= start : false;
           });
-          if (res.ok) {
-            loaded.push(await res.json());
-          }
-        } catch {
-          // Use cached data when offline
         }
       }
-      if (loaded.length > 0) {
-        setWaybills(loaded);
-        sessionStorage.setItem('iaw_waybills', JSON.stringify(loaded));
-      } else if (!cached) {
-        setWaybills(FALLBACK_WAYBILLS);
-        sessionStorage.setItem('iaw_waybills', JSON.stringify(FALLBACK_WAYBILLS));
-      }
-    };
-    load();
-  }, [session.token]);
 
-  const visibleWaybills = isDispatcher
-    ? waybills
-    : waybills.filter(
-        (w) => w.driverId === null || w.driverId === session.driverId
-      );
+      if (completedEndDate.trim()) {
+        const end = new Date(completedEndDate.trim());
+        end.setHours(23, 59, 59, 999);
+        const endTime = end.getTime();
+        if (!Number.isNaN(endTime)) {
+          list = list.filter((w) => {
+            const ts = w.createdAt ?? w.capturedAt;
+            return ts ? new Date(ts).getTime() <= endTime : false;
+          });
+        }
+      }
+
+      return list;
+    }
+
+    if (dispatchTab === 'PENDING_PRICE') {
+      return scopedWaybills.filter((w) => w.status === 'DELIVERED' && waybillPrice(w) <= 0);
+    }
+
+    return scopedWaybills.filter((w) => w.status === 'DRAFT' || w.status === 'PICKED_UP');
+  }, [
+    completedEndDate,
+    completedSearchQuery,
+    completedStartDate,
+    dispatchTab,
+    isDispatcher,
+    scopedWaybills,
+  ]);
+
+  const conflictWaybillNumbers = new Set(conflictEvents.map((e) => e.waybillNumber));
 
   return (
     <div className="dashboard">
@@ -109,13 +439,15 @@ export default function DashboardPage({
           </button>
 
           <div className="sync-stats">
-            <span>S:0</span>
-            <span>C:0</span>
+            <span>
+              S:<span className="synced">{syncStats.syncedCount}</span>
+            </span>
+            <span>
+              C:<span className={syncStats.conflictCount > 0 ? 'conflict' : ''}>{syncStats.conflictCount}</span>
+            </span>
           </div>
 
-          <span className="pending-sync-label">
-            {pendingCount} Pending Sync
-          </span>
+          <span className="pending-sync-label">{syncStats.pendingCount} Pending Sync</span>
 
           <button type="button" className="sign-out-btn" onClick={onSignOut}>
             Sign Out
@@ -123,296 +455,287 @@ export default function DashboardPage({
         </div>
       </header>
 
+      {syncStats.conflictCount > 0 && (
+        <div className="conflict-banner">
+          {conflictEvents.map((evt) => (
+            <div key={evt.id} className="conflict-row">
+              <span>
+                ⚠️ {evt.waybillNumber}: sync conflict — server rejected duplicate collision
+              </span>
+              <button
+                type="button"
+                className="btn-retry-sync"
+                onClick={() => void syncManager.resolveConflictForce(evt.id, session)}
+              >
+                Retry
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="action-row">
         <button type="button" className="btn-primary" onClick={onNewPickup}>
           ➕ NEW PICKUP (WAYBILL)
         </button>
 
         {isDispatcher && (
-          <button type="button" className="btn-accounting">
+          <button type="button" className="btn-accounting" onClick={onOpenAccounting}>
             📊 ACCOUNTING & INVOICES
           </button>
         )}
       </div>
 
-      <div className="waybill-list">
-        {visibleWaybills.map((wb) => (
-          <div key={wb.waybillNumber} className="waybill-row">
-            <div>
-              <strong>{wb.waybillNumber}</strong>
-              <div>{wb.parcelDescription}</div>
-              <div className="route">
-                {wb.pickupLocationName} ➡️ {wb.dropoffDestinationName}
+      {isDispatcher && (
+        <div className="dispatch-tabs">
+          {(['ACTIVE', 'PENDING_PRICE', 'COMPLETED'] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              className={dispatchTab === tab ? 'dispatch-tab active' : 'dispatch-tab'}
+              onClick={() => setDispatchTab(tab)}
+            >
+              {tab === 'ACTIVE' ? 'Active Jobs' : tab === 'PENDING_PRICE' ? 'Pending Price' : 'Completed'}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {isDispatcher && dispatchTab === 'COMPLETED' && (
+        <div className="completed-filters">
+          <input
+            className="search-input"
+            value={completedSearchQuery}
+            onChange={(e) => setCompletedSearchQuery(e.target.value)}
+            placeholder="🔍 Search waybill or business name..."
+          />
+          <div className="date-filter-row">
+            <label>
+              From:
+              <input
+                className="date-input"
+                value={completedStartDate}
+                onChange={(e) => setCompletedStartDate(e.target.value)}
+                placeholder="YYYY-MM-DD"
+              />
+            </label>
+            <label>
+              To:
+              <input
+                className="date-input"
+                value={completedEndDate}
+                onChange={(e) => setCompletedEndDate(e.target.value)}
+                placeholder="YYYY-MM-DD"
+              />
+            </label>
+            {(completedSearchQuery || completedStartDate || completedEndDate) && (
+              <button
+                type="button"
+                className="btn-clear-filters"
+                onClick={() => {
+                  setCompletedSearchQuery('');
+                  setCompletedStartDate('');
+                  setCompletedEndDate('');
+                }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="waybill-table-wrap">
+        <table className="waybill-table">
+          <thead>
+            <tr>
+              <th>Waybill</th>
+              <th>Date</th>
+              <th>Time</th>
+              <th>Cargo</th>
+              <th>Route</th>
+              <th>Status</th>
+              {isDispatcher ? <th>Assignment</th> : <th>Action</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {visibleWaybills.map((wb) => {
+              const quote = calculatePrice(
+                wb.pickupLocationName,
+                wb.dropoffDestinationName,
+                undefined,
+                false,
+                wb.priority
+              );
+              const price = waybillPrice(wb) || quote.price;
+              const timestamp = wb.capturedAt ?? wb.createdAt;
+              const hasConflict = conflictWaybillNumbers.has(wb.waybillNumber);
+              const isCompleted = wb.status === 'DELIVERED';
+              const showDriverAction =
+                !isDispatcher && isAssignedToMe(wb) && (wb.status === 'DRAFT' || wb.status === 'PICKED_UP');
+
+              return (
+                <tr
+                  key={wb.waybillNumber}
+                  className={hasConflict ? 'row-conflict' : undefined}
+                  onClick={() => {
+                    if (isDispatcher && dispatchTab === 'PENDING_PRICE') {
+                      setPendingPriceWaybill(wb);
+                      setQuotePrice('');
+                      return;
+                    }
+                    if (showDriverAction) {
+                      handleDriverAction(wb);
+                    }
+                  }}
+                >
+                  <td>
+                    <div className="table-waybill">{wb.waybillNumber}</div>
+                    {wb.priority === 'RUSH' && <span className="rush-badge">RUSH</span>}
+                    {hasConflict && <span className="conflict-badge">CONFLICT</span>}
+                  </td>
+                  <td>{formatWaybillDate(timestamp)}</td>
+                  <td>{formatWaybillTime(timestamp)}</td>
+                  <td>{wb.parcelDescription}</td>
+                  <td>
+                    <div className="route">
+                      🚩 {getLocationShortName(wb.pickupLocationName)} ➡️{' '}
+                      {getLocationShortName(wb.dropoffDestinationName)}
+                    </div>
+                    <div className="route-price">{price > 0 ? `$${price.toFixed(2)}` : 'Manual'}</div>
+                  </td>
+                  <td>
+                    <span className={`status-tag status-${wb.status.toLowerCase()}`}>
+                      {statusLabel(wb.status)}
+                    </span>
+                  </td>
+                  <td
+                    onClick={(e) => {
+                      if (isDispatcher) e.stopPropagation();
+                    }}
+                  >
+                    {isDispatcher ? (
+                      <DispatchAssignmentCell
+                        wb={wb}
+                        onAssign={(driverId) => void handleAssignDriver(wb, driverId)}
+                      />
+                    ) : showDriverAction ? (
+                        <button
+                          type="button"
+                          className="action-badge-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDriverAction(wb);
+                          }}
+                        >
+                          {wb.status === 'DRAFT'
+                            ? 'Pick Up'
+                            : wb.podRequired || wb.additionalComments === '__podRequired'
+                              ? 'Deliver w/ POD'
+                              : 'Deliver'}
+                        </button>
+                      ) : null}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {isDispatcher && (
+        <div className="driver-roster">
+          <button
+            type="button"
+            className="roster-toggle"
+            onClick={() => setShowDriverRoster((v) => !v)}
+          >
+            {showDriverRoster ? '▼' : '▶'} Drivers
+          </button>
+          {showDriverRoster &&
+            DRIVERS.map((driver) => (
+              <span key={driver.id} className="driver-chip">
+                {driver.firstName} {driver.lastName[0]}.
+              </span>
+            ))}
+        </div>
+      )}
+
+      {deliverConfirmWaybill && (
+        <div className="modal-overlay">
+          <div className="modal-content deliver-confirm-modal">
+            <h3>Confirm Delivery</h3>
+            <div className="modal-details">
+              <div>Waybill #: {deliverConfirmWaybill.waybillNumber}</div>
+              <div>
+                Route: {getLocationShortName(deliverConfirmWaybill.pickupLocationName)} ➡️{' '}
+                {getLocationShortName(deliverConfirmWaybill.dropoffDestinationName)}
               </div>
+              <div>Cargo: {deliverConfirmWaybill.parcelDescription}</div>
             </div>
-            <div className="waybill-actions">
-              {wb.status === 'PICKED_UP' &&
-                (isDispatcher || wb.driverId === session.driverId) && (
-                  <button type="button" className="btn-signoff" onClick={() => onSignOff(wb)}>
-                    SIGN OFF ➡️
-                  </button>
-                )}
-              <span className="status-badge">{wb.status}</span>
+            <p className="deliver-confirm-note">
+              No signature required. Tap below to mark this delivery complete.
+            </p>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setDeliverConfirmWaybill(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => void handleConfirmDelivery(deliverConfirmWaybill)}
+              >
+                ✔ Confirm Delivery
+              </button>
             </div>
           </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+        </div>
+      )}
 
-interface PickupPageProps {
-  session: AuthSession;
-  isOnline: boolean;
-  onBack: () => void;
-}
-
-/**
- * New pickup form that buffers waybill events offline in IndexedDB.
- */
-export function PickupPage({ session, isOnline, onBack }: PickupPageProps) {
-  const [locationName, setLocationName] = useState('');
-  const [pickupAddress, setPickupAddress] = useState('');
-  const [cargoDescription, setCargoDescription] = useState('');
-
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    const id = crypto.randomUUID();
-    const waybillNumber = `W-${Date.now().toString().slice(-4)}`;
-
-    await queueEvent({
-      id,
-      clientSideUuid: id,
-      waybillNumber,
-      eventType: 'WAYBILL_CREATED',
-      timestamp: new Date().toISOString(),
-      data: {
-        pickupLocationName: locationName,
-        pickupAddress,
-        parcelDescription: cargoDescription,
-        dropoffDestinationName: 'Depot',
-        driverId: session.driverId,
-      },
-    });
-
-    if (isOnline && session.token) {
-      await fetch('/api/sync/events', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.token}`,
-        },
-        body: JSON.stringify({
-          events: [
-            {
-              id,
-              clientSideUuid: id,
-              waybillNumber,
-              eventType: 'WAYBILL_CREATED',
-              timestamp: new Date().toISOString(),
-              data: {
-                pickupLocationName: locationName,
-                pickupAddress,
-                parcelDescription: cargoDescription,
-                dropoffDestinationName: 'Depot',
-              },
-            },
-          ],
-        }),
-      }).catch(() => undefined);
-    }
-
-    onBack();
-  };
-
-  return (
-    <div className="form-page">
-      <button type="button" className="back-btn" onClick={onBack}>
-        ← Back
-      </button>
-      <h2>New Pickup</h2>
-      <form onSubmit={handleSubmit}>
-        <label>Location/Business Name</label>
-        <input
-          value={locationName}
-          onChange={(e) => setLocationName(e.target.value)}
-          placeholder="Location/Business Name"
-          required
-        />
-        <label>Pickup Address</label>
-        <input
-          value={pickupAddress}
-          onChange={(e) => setPickupAddress(e.target.value)}
-          placeholder="Pickup Address"
-          required
-        />
-        <label>Cargo Description</label>
-        <input
-          value={cargoDescription}
-          onChange={(e) => setCargoDescription(e.target.value)}
-          placeholder="Cargo Description"
-          required
-        />
-        <button type="submit" className="btn-primary">
-          💾 COMPLETE PICKUP & LOG WAYBILL
-        </button>
-      </form>
-    </div>
-  );
-}
-
-interface SignOffPageProps {
-  waybill: Waybill;
-  session: AuthSession;
-  isOnline: boolean;
-  onBack: () => void;
-}
-
-/**
- * Delivery sign-off form with signature canvas and blob queueing.
- */
-export function SignOffPage({ waybill, session, isOnline, onBack }: SignOffPageProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [printedName, setPrintedName] = useState('');
-  const drawing = useRef(false);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.strokeStyle = '#000';
-      ctx.lineWidth = 2;
-    }
-
-    /** Queues a placeholder signature blob when the canvas receives a draw event. */
-    const handleSignatureDraw = () => {
-      void queueBlob({
-        id: crypto.randomUUID(),
-        waybillNumber: waybill.waybillNumber,
-        fileType: 'signature',
-        blob: new Blob([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], {
-          type: 'image/png',
-        }),
-        createdAt: new Date().toISOString(),
-      });
-    };
-
-    canvas.addEventListener('signatureDraw', handleSignatureDraw);
-    return () => canvas.removeEventListener('signatureDraw', handleSignatureDraw);
-  }, [waybill.waybillNumber]);
-
-  const getPoint = (e: React.MouseEvent | React.TouchEvent) => {
-    const canvas = canvasRef.current!;
-    const rect = canvas.getBoundingClientRect();
-    if ('touches' in e) {
-      return {
-        x: e.touches[0].clientX - rect.left,
-        y: e.touches[0].clientY - rect.top,
-      };
-    }
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-  };
-
-  const startDraw = (e: React.MouseEvent | React.TouchEvent) => {
-    drawing.current = true;
-    const ctx = canvasRef.current?.getContext('2d');
-    const pt = getPoint(e);
-    ctx?.beginPath();
-    ctx?.moveTo(pt.x, pt.y);
-  };
-
-  const draw = (e: React.MouseEvent | React.TouchEvent) => {
-    if (!drawing.current) return;
-    const ctx = canvasRef.current?.getContext('2d');
-    const pt = getPoint(e);
-    ctx?.lineTo(pt.x, pt.y);
-    ctx?.stroke();
-  };
-
-  const endDraw = () => {
-    drawing.current = false;
-  };
-
-  const handleComplete = async (e: FormEvent) => {
-    e.preventDefault();
-    const eventId = crypto.randomUUID();
-
-    await queueEvent({
-      id: eventId,
-      clientSideUuid: eventId,
-      waybillNumber: waybill.waybillNumber,
-      eventType: 'WAYBILL_DELIVERED',
-      timestamp: new Date().toISOString(),
-      data: {
-        deliveredAt: new Date().toISOString(),
-        signatureName: printedName,
-      },
-    });
-
-    const canvas = canvasRef.current;
-    const blob =
-      canvas &&
-      (await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), 'image/png')));
-    await queueBlob({
-      id: crypto.randomUUID(),
-      waybillNumber: waybill.waybillNumber,
-      fileType: 'signature',
-      blob: blob ?? new Blob([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], {
-        type: 'image/png',
-      }),
-      createdAt: new Date().toISOString(),
-    });
-
-    if (isOnline && session.token) {
-      await fetch(`/api/waybills/${waybill.waybillNumber}/events`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.token}`,
-        },
-        body: JSON.stringify({
-          eventType: 'WAYBILL_DELIVERED',
-          data: { deliveredAt: new Date().toISOString(), signatureName: printedName },
-        }),
-      }).catch(() => undefined);
-    }
-
-    onBack();
-  };
-
-  return (
-    <div className="form-page">
-      <button type="button" className="back-btn" onClick={onBack}>
-        ← Back
-      </button>
-      <h2>Sign Off — {waybill.waybillNumber}</h2>
-      <form onSubmit={handleComplete}>
-        <label>Printed Name</label>
-        <input
-          value={printedName}
-          onChange={(e) => setPrintedName(e.target.value)}
-          placeholder="Printed Name"
-          required
-        />
-        <canvas
-          id="signature-canvas"
-          ref={canvasRef}
-          width={400}
-          height={150}
-          className="signature-canvas"
-          onMouseDown={startDraw}
-          onMouseMove={draw}
-          onMouseUp={endDraw}
-          onMouseLeave={endDraw}
-          onTouchStart={startDraw}
-          onTouchMove={draw}
-          onTouchEnd={endDraw}
-        />
-        <button type="submit" className="btn-primary">
-          ✔ COMPLETE DELIVERY & SIGN OFF
-        </button>
-      </form>
+      {pendingPriceWaybill && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3>Set Dispatcher Price Quote</h3>
+            <div className="modal-details">
+              <div>Waybill #: {pendingPriceWaybill.waybillNumber}</div>
+              <div>From: {pendingPriceWaybill.pickupLocationName}</div>
+              <div>To: {pendingPriceWaybill.dropoffDestinationName}</div>
+              <div>Cargo: {pendingPriceWaybill.parcelDescription}</div>
+            </div>
+            <label>Enter Quote Price ($) *</label>
+            <input
+              value={quotePrice}
+              onChange={(e) => setQuotePrice(e.target.value)}
+              placeholder="e.g. 75.00"
+              autoFocus
+            />
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  setPendingPriceWaybill(null);
+                  setQuotePrice('');
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={!quotePrice.trim()}
+                onClick={() => void handleConfirmQuotePrice()}
+              >
+                Confirm Price
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

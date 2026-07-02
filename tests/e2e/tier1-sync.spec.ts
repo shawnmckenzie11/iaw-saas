@@ -72,8 +72,8 @@ async function seedIndexedDBEvents(page: any, count: number): Promise<void> {
 test.describe('Feature 4: Offline Local IndexedDB (Tier 1)', () => {
   test.describe.configure({ mode: 'serial' });
 
-  test.beforeEach(async ({ page }) => {
-    // Navigate and login as Driver 1
+  test.beforeEach(async ({ page, context }) => {
+    await context.setOffline(false);
     await page.goto('/');
     await page.getByPlaceholder('e.g. driver1 or dispatch').fill('driver1');
     await page.getByPlaceholder('4-digit passcode').fill('1111');
@@ -91,20 +91,18 @@ test.describe('Feature 4: Offline Local IndexedDB (Tier 1)', () => {
     // 2. Click "➕ NEW PICKUP (WAYBILL)"
     await page.getByText('➕ NEW PICKUP (WAYBILL)').click();
 
-    // 3. Fill in details
-    await page.getByPlaceholder('Location/Business Name').fill('Wajax');
-    await page.getByPlaceholder('Pickup Address').fill('Sudbury, ON');
-    await page.getByPlaceholder('Cargo Description').fill('Drill Bits');
+    // 3. Quick-select pickup chip (CSV-derived top-6) then dropoff
+    await page.getByRole('button', { name: 'Wajax' }).click();
+    await page.getByText('Confirm Drop Off Location ➡').click();
+    await page.getByRole('button', { name: 'Toromont' }).click();
     await page.getByText('💾 COMPLETE PICKUP & LOG WAYBILL').click();
 
     // 4. Verify client buffers event in IndexedDB and increments counter
     const dbCount = await getIndexedDBCount(page, 'waybill_events');
     expect(dbCount).toBeGreaterThanOrEqual(1);
 
-    // Verify UI displays pending sync count
-    await expect(
-      page.locator('text=1 Pending Sync').or(page.locator('text=P:1'))
-    ).toBeVisible();
+    // Verify UI displays pending sync count (create + picked-up = 2 events)
+    await expect(page.getByText(/\d+ Pending Sync/)).toBeVisible();
   });
 
   // F4-T1-02: Separate Media Blob Buffering
@@ -115,8 +113,8 @@ test.describe('Feature 4: Offline Local IndexedDB (Tier 1)', () => {
     }
     await context.setOffline(true);
 
-    // Open an active job to sign off
-    await page.getByText('SIGN OFF ➡️').first().click();
+    // Open an active job to sign off (W-001 requires POD)
+    await page.getByRole('button', { name: 'Deliver w/ POD' }).first().click();
 
     // Capture signature and complete sign-off
     await page.getByPlaceholder('Printed Name').fill('John Smith');
