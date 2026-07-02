@@ -483,10 +483,14 @@ body {
   color: var(--primary);
 }
 
-.dispatch-tab.active.active-jobs-tab {
+.dispatch-tab.active-jobs-tab {
   background: var(--success);
   border-color: var(--success);
   color: #fff;
+}
+
+.dispatch-tab.active-jobs-tab.active {
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35);
 }
 
 .waybill-table-wrap {

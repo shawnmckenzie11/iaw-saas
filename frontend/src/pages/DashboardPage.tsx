@@ -1139,9 +1139,11 @@ export default function DashboardPage({
               key={tab}
               type="button"
               className={
-                dispatchTab === tab
-                  ? `dispatch-tab active${tab === 'ACTIVE' ? ' active-jobs-tab' : ''}`
-                  : 'dispatch-tab'
+                tab === 'ACTIVE'
+                  ? `dispatch-tab active-jobs-tab${dispatchTab === tab ? ' active' : ''}`
+                  : dispatchTab === tab
+                    ? 'dispatch-tab active'
+                    : 'dispatch-tab'
               }
               onClick={() => setDispatchTab(tab)}
             >
