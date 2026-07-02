@@ -84,7 +84,7 @@ test.describe('PWA walkthrough recording', () => {
     });
 
     await page.reload();
-    await page.getByRole('button', { name: /pending price/i }).click();
+    await page.getByRole('button', { name: /completed pending \$/i }).click();
     await page.getByText(waybillNumber).click();
     await expect(page.getByText(/pending price/i).first()).toBeVisible();
     await page.getByPlaceholder('e.g. 75.00').fill('65');

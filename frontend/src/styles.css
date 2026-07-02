@@ -483,6 +483,12 @@ body {
   color: var(--primary);
 }
 
+.dispatch-tab.active.active-jobs-tab {
+  background: var(--success);
+  border-color: var(--success);
+  color: #fff;
+}
+
 .waybill-table-wrap {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;

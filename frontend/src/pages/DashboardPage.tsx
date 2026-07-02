@@ -111,6 +111,17 @@ function DispatchAssignmentCell({
 }
 
 /**
+ * Returns the dispatcher workflow action label for an active waybill row.
+ */
+function dispatchWorkflowActionLabel(wb: Waybill): string | null {
+  if (wb.status === 'DRAFT') return 'Pickup';
+  if (wb.status === 'PICKED_UP') {
+    return wb.podRequired || wb.additionalComments === '__podRequired' ? 'Deliver w/ POD' : 'Deliver';
+  }
+  return null;
+}
+
+/**
  * Returns a human-readable operational status label for dashboard tables.
  */
 function statusLabel(status: string): string {
@@ -725,6 +736,8 @@ export default function DashboardPage({
 
   const showDispatchDeleteCol =
     isDispatcher && !isDriverPreview && dispatchTab === 'ACTIVE';
+  const showDispatchWorkflowCol =
+    isDispatcher && !isDriverPreview && dispatchTab === 'ACTIVE';
 
   /**
    * Toggles expansion for a completed-delivery time bucket in the driver view.
@@ -762,6 +775,8 @@ export default function DashboardPage({
   const renderTableHeader = (opts: {
     showCapture?: boolean;
     actionLabel?: string;
+    showDispatchAssignment?: boolean;
+    showDispatchWorkflowAction?: boolean;
     showDelete?: boolean;
     hidePrice?: boolean;
     /** Dispatch tables lead with pickup/dropoff route columns. */
@@ -788,7 +803,12 @@ export default function DashboardPage({
         {!opts.hidePrice && <th className="col-price">$</th>}
         <th>Status</th>
         {opts.showCapture && <th>Capture</th>}
-        <th className="col-action">{opts.actionLabel ?? 'Action'}</th>
+        {opts.showDispatchAssignment ? (
+          <th className="col-assignment">Assignment</th>
+        ) : (
+          <th className="col-action">{opts.actionLabel ?? 'Action'}</th>
+        )}
+        {opts.showDispatchWorkflowAction && <th className="col-action">Action</th>}
         {opts.showDelete && (
           <th className="col-delete" aria-label="Delete">
             {' '}
@@ -816,6 +836,8 @@ export default function DashboardPage({
       !isDriverPreview &&
       dispatchTab === 'ACTIVE' &&
       (wb.status === 'DRAFT' || wb.status === 'PICKED_UP');
+    const dispatchWorkflowLabel =
+      isDispatcher && !isDriverPreview ? dispatchWorkflowActionLabel(wb) : null;
 
     const routeCells = (
       <>
@@ -908,37 +930,69 @@ export default function DashboardPage({
             </div>
           </td>
         )}
-        <td
-          className="col-action"
-          onClick={(e) => {
-            if (isDispatcher && !isDriverPreview) e.stopPropagation();
-          }}
-        >
-          {isDispatcher && !isDriverPreview ? (
-            <DispatchAssignmentCell
-              wb={wb}
-              drivers={driverRoster}
-              onAssignClick={(driverId) => openAssignModal(wb, driverId)}
-            />
-          ) : showDriverAction ? (
-            <button
-              type="button"
-              className="action-badge-btn"
+        {isDispatcher && !isDriverPreview ? (
+          <>
+            <td
+              className="col-assignment"
               onClick={(e) => {
                 e.stopPropagation();
-                handleDriverAction(wb);
               }}
             >
-              {wb.status === 'DRAFT'
-                ? 'Pickup'
-                : wb.podRequired || wb.additionalComments === '__podRequired'
-                  ? 'Deliver w/ POD'
-                  : 'Deliver'}
-            </button>
-          ) : readOnly && wb.status === 'DELIVERED' ? (
-            <span className="driver-readonly-label">Completed</span>
-          ) : null}
-        </td>
+              <DispatchAssignmentCell
+                wb={wb}
+                drivers={driverRoster}
+                onAssignClick={(driverId) => openAssignModal(wb, driverId)}
+              />
+            </td>
+            {showDispatchWorkflowCol && (
+              <td
+                className="col-action"
+                onClick={(e) => {
+                  e.stopPropagation();
+                }}
+              >
+                {dispatchWorkflowLabel ? (
+                  <button
+                    type="button"
+                    className="action-badge-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDriverAction(wb);
+                    }}
+                  >
+                    {dispatchWorkflowLabel}
+                  </button>
+                ) : null}
+              </td>
+            )}
+          </>
+        ) : (
+          <td
+            className="col-action"
+            onClick={(e) => {
+              if (isDispatcher && !isDriverPreview) e.stopPropagation();
+            }}
+          >
+            {showDriverAction ? (
+              <button
+                type="button"
+                className="action-badge-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDriverAction(wb);
+                }}
+              >
+                {wb.status === 'DRAFT'
+                  ? 'Pickup'
+                  : wb.podRequired || wb.additionalComments === '__podRequired'
+                    ? 'Deliver w/ POD'
+                    : 'Deliver'}
+              </button>
+            ) : readOnly && wb.status === 'DELIVERED' ? (
+              <span className="driver-readonly-label">Completed</span>
+            ) : null}
+          </td>
+        )}
         {showDispatchDeleteCol && (
           <td
             className="col-delete"
@@ -1084,13 +1138,17 @@ export default function DashboardPage({
             <button
               key={tab}
               type="button"
-              className={dispatchTab === tab ? 'dispatch-tab active' : 'dispatch-tab'}
+              className={
+                dispatchTab === tab
+                  ? `dispatch-tab active${tab === 'ACTIVE' ? ' active-jobs-tab' : ''}`
+                  : 'dispatch-tab'
+              }
               onClick={() => setDispatchTab(tab)}
             >
               {tab === 'ACTIVE'
                 ? 'Active Jobs'
                 : tab === 'PENDING_PRICE'
-                  ? `Pending Price (${pendingPriceCount})`
+                  ? `Completed Pending $ (${pendingPriceCount})`
                   : `Completed (${completedPricedCount})`}
             </button>
           ))}
@@ -1204,7 +1262,7 @@ export default function DashboardPage({
                   <div className="waybill-table-wrap completed-deliveries-table">
                     {group.items.length > 0 ? (
                       <table className="waybill-table">
-                        {renderTableHeader({ actionLabel: 'Assignment', routeFirst: true })}
+                        {renderTableHeader({ showDispatchAssignment: true, routeFirst: true })}
                         <tbody>{group.items.map((wb) => renderWaybillRow(wb, false, true))}</tbody>
                       </table>
                     ) : (
@@ -1221,7 +1279,8 @@ export default function DashboardPage({
           <table className="waybill-table">
             {renderTableHeader({
               showCapture: isDispatcher && !isDriverPreview && dispatchTab === 'COMPLETED',
-              actionLabel: 'Assignment',
+              showDispatchAssignment: isDispatcher && !isDriverPreview,
+              showDispatchWorkflowAction: showDispatchWorkflowCol,
               showDelete: showDispatchDeleteCol,
               routeFirst: true,
             })}
