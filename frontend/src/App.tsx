@@ -22,7 +22,7 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>('dashboard');
   const [signOffWaybill, setSignOffWaybill] = useState<Waybill | null>(null);
   const [stats, setStats] = useState<SyncStats>({ pendingCount: 0, syncedCount: 0, conflictCount: 0 });
-  const [isOnline, setIsOnline] = useState(true);
+  const [isOnline, setIsOnline] = useState(() => readNetworkOnline());
 
   useEffect(() => {
     if (session) {
@@ -45,8 +45,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    syncManager.setNetworkConnected(isOnline);
     if (session && isOnline) {
-      syncManager.syncQueue(session);
+      void syncManager.syncQueue(session);
     }
   }, [session, isOnline]);
 
@@ -54,6 +55,9 @@ export default function App() {
     const result = await authenticateUser(username, passcode);
     if (!result) return false;
     await saveSession(result);
+    persistNetworkOnline(true);
+    syncManager.setNetworkConnected(true);
+    setIsOnline(true);
     setSession(result);
     setScreen('dashboard');
     await syncManager.refresh();
@@ -69,6 +73,7 @@ export default function App() {
   const toggleNetwork = () => {
     const next = !isOnline;
     setIsOnline(next);
+    persistNetworkOnline(next);
     syncManager.setNetworkConnected(next);
   };
 
@@ -122,4 +127,21 @@ export default function App() {
       }}
     />
   );
+}
+
+/**
+ * Reads persisted/simulated network state for offline queue tests.
+ */
+function readNetworkOnline(): boolean {
+  if (typeof window === 'undefined') return true;
+  const saved = sessionStorage.getItem('iaw_network_online');
+  if (saved !== null) return saved === 'true';
+  return navigator.onLine;
+}
+
+/**
+ * Persists the UI network toggle across page reloads.
+ */
+function persistNetworkOnline(online: boolean): void {
+  sessionStorage.setItem('iaw_network_online', String(online));
 }

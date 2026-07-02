@@ -70,6 +70,8 @@ async function seedIndexedDBEvents(page: any, count: number): Promise<void> {
 }
 
 test.describe('Feature 4: Offline Local IndexedDB (Tier 1)', () => {
+  test.describe.configure({ mode: 'serial' });
+
   test.beforeEach(async ({ page }) => {
     // Navigate and login as Driver 1
     await page.goto('/');
@@ -145,8 +147,14 @@ test.describe('Feature 4: Offline Local IndexedDB (Tier 1)', () => {
     // Seed 3 offline events
     await seedIndexedDBEvents(page, 3);
 
-    // Refresh page / reload stats and verify UI updates
+    // Reload while online so the app shell can load, then simulate offline again
+    await context.setOffline(false);
     await page.reload();
+    await expect(page.getByText('Pending Sync')).toBeVisible();
+    await context.setOffline(true);
+    if (await page.getByText('🟢 Live').isVisible()) {
+      await page.getByText('🟢 Live').click();
+    }
     await expect(
       page.locator('text=3 Pending Sync').or(page.locator('text=P:3'))
     ).toBeVisible();
@@ -163,14 +171,26 @@ test.describe('Feature 4: Offline Local IndexedDB (Tier 1)', () => {
     // Seed 2 offline events
     await seedIndexedDBEvents(page, 2);
 
-    // Verify count
+    // Reload online first (offline reload cannot fetch the app shell), then go offline
+    await context.setOffline(false);
     await page.reload();
+    await expect(page.getByText('Pending Sync')).toBeVisible();
+    await context.setOffline(true);
+    if (await page.getByText('🟢 Live').isVisible()) {
+      await page.getByText('🟢 Live').click();
+    }
     await expect(
       page.locator('text=2 Pending Sync').or(page.locator('text=P:2'))
     ).toBeVisible();
 
-    // Reload again
+    // Reload again (online), then offline
+    await context.setOffline(false);
     await page.reload();
+    await expect(page.getByText('Pending Sync')).toBeVisible();
+    await context.setOffline(true);
+    if (await page.getByText('🟢 Live').isVisible()) {
+      await page.getByText('🟢 Live').click();
+    }
     await expect(
       page.locator('text=2 Pending Sync').or(page.locator('text=P:2'))
     ).toBeVisible();

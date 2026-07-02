@@ -105,8 +105,10 @@ Playwright auto-starts backend (`:3002`) and frontend preview (`:3000`) via `web
 
 ### Full Suite
 ```bash
-npm test    # backend + e2e
+# Run exactly this — do not append extra words after the command
+npm test
 ```
+Runs backend Jest (`test:backend`) then Playwright Tier 1 (`test:e2e`).
 
 ---
 
