@@ -3,84 +3,34 @@ import bcrypt from 'bcryptjs';
 import { hashPin } from './utils/pinHash';
 import { archiveYearStart } from './utils/archiveCsvImporter';
 import { reseedFromArchive } from './reseedFromArchive';
+import { loadSeedConfig } from './seedConfig';
 
 /**
- * Seeds drivers, dispatchers, route rates, and YTD archive completed deliveries.
+ * Seeds drivers, dispatchers, route rates, and optional YTD archive completed deliveries.
  */
 async function main() {
+  const { dispatcherEmail, dispatcherPassword, drivers } = loadSeedConfig();
   console.log('[Seed] Seeding default testing accounts...');
 
-  const d1 = await prisma.driver.upsert({
-    where: { id: 'drv-01' },
-    update: {
-      firstName: 'Shawn',
-      lastName: 'McKenzie',
-      pinHash: hashPin('1111'),
-      isActive: true,
-    },
-    create: {
-      id: 'drv-01',
-      firstName: 'Shawn',
-      lastName: 'McKenzie',
-      pinHash: hashPin('1111'),
-      isActive: true,
-    },
-  });
-  console.log(`[Seed] Driver 1 upserted: ${d1.firstName} ${d1.lastName} (${d1.id})`);
-
-  const d2 = await prisma.driver.upsert({
-    where: { id: 'drv-02' },
-    update: {
-      firstName: 'Driver',
-      lastName: 'Two',
-      pinHash: hashPin('2222'),
-      isActive: true,
-    },
-    create: {
-      id: 'drv-02',
-      firstName: 'Driver',
-      lastName: 'Two',
-      pinHash: hashPin('2222'),
-      isActive: true,
-    },
-  });
-  console.log(`[Seed] Driver 2 upserted: ${d2.firstName} ${d2.lastName} (${d2.id})`);
-
-  const d3 = await prisma.driver.upsert({
-    where: { id: 'drv-03' },
-    update: {
-      firstName: 'Sarah',
-      lastName: 'Connor',
-      pinHash: hashPin('3333'),
-      isActive: true,
-    },
-    create: {
-      id: 'drv-03',
-      firstName: 'Sarah',
-      lastName: 'Connor',
-      pinHash: hashPin('3333'),
-      isActive: true,
-    },
-  });
-  console.log(`[Seed] Driver 3 upserted: ${d3.firstName} ${d3.lastName} (${d3.id})`);
-
-  const d4 = await prisma.driver.upsert({
-    where: { id: 'drv-04' },
-    update: {
-      firstName: 'Alex',
-      lastName: 'Mercer',
-      pinHash: hashPin('4444'),
-      isActive: true,
-    },
-    create: {
-      id: 'drv-04',
-      firstName: 'Alex',
-      lastName: 'Mercer',
-      pinHash: hashPin('4444'),
-      isActive: true,
-    },
-  });
-  console.log(`[Seed] Driver 4 upserted: ${d4.firstName} ${d4.lastName} (${d4.id})`);
+  for (const driver of drivers) {
+    const record = await prisma.driver.upsert({
+      where: { id: driver.id },
+      update: {
+        firstName: driver.firstName,
+        lastName: driver.lastName,
+        pinHash: hashPin(driver.pin),
+        isActive: true,
+      },
+      create: {
+        id: driver.id,
+        firstName: driver.firstName,
+        lastName: driver.lastName,
+        pinHash: hashPin(driver.pin),
+        isActive: true,
+      },
+    });
+    console.log(`[Seed] Driver upserted: ${record.firstName} ${record.lastName} (${record.id})`);
+  }
 
   const defaultPayRates: Record<string, number> = {
     'drv-01': 22.5,
@@ -89,8 +39,8 @@ async function main() {
     'drv-04': 20.75,
   };
 
-  const drivers = await prisma.driver.findMany({ where: { isActive: true } });
-  for (const driver of drivers) {
+  const activeDrivers = await prisma.driver.findMany({ where: { isActive: true } });
+  for (const driver of activeDrivers) {
     const email = `${driver.firstName.toLowerCase()}.${driver.lastName.toLowerCase().replace(/\s+/g, '')}@example.com`;
     const payRate = defaultPayRates[driver.id] ?? 20.0;
     const existing = await prisma.employee.findFirst({
@@ -122,13 +72,11 @@ async function main() {
       });
     }
   }
-  console.log(`[Seed] Payroll employees upserted for ${drivers.length} driver(s)`);
+  console.log(`[Seed] Payroll employees upserted for ${activeDrivers.length} driver(s)`);
 
-  const dispatcherPassword = 'password123';
   const passwordHash = await bcrypt.hash(dispatcherPassword, 10);
-
   const dispatcher = await prisma.dispatcher.upsert({
-    where: { email: 'dispatcher@example.com' },
+    where: { email: dispatcherEmail },
     update: {
       passwordHash,
       firstName: 'System',
@@ -136,7 +84,7 @@ async function main() {
       isActive: true,
     },
     create: {
-      email: 'dispatcher@example.com',
+      email: dispatcherEmail,
       passwordHash,
       firstName: 'System',
       lastName: 'Dispatcher',
@@ -149,8 +97,8 @@ async function main() {
     { id: '00000000-0000-0000-0000-000000000001', origin: 'Sudbury', destination: 'Lively', flatRate: 60.0 },
     { id: '00000000-0000-0000-0000-000000000002', origin: 'Sudbury', destination: 'Chelmsford/Hanmer', flatRate: 50.0 },
     { id: '00000000-0000-0000-0000-000000000003', origin: 'Sudbury', destination: 'Val Caron/Azilda', flatRate: 40.0 },
-    { id: '00000000-0000-0000-0000-000000000004', origin: 'Sudbury', destination: 'Redpath ODP', flatRate: 125.0 },
-    { id: '00000000-0000-0000-0000-000000000005', origin: 'Sudbury', destination: 'Victoria Mine', flatRate: 120.0 },
+    { id: '00000000-0000-0000-0000-000000000004', origin: 'Demo City', destination: 'Remote Site A', flatRate: 125.0 },
+    { id: '00000000-0000-0000-0000-000000000005', origin: 'Demo City', destination: 'Remote Site B', flatRate: 120.0 },
     { id: '00000000-0000-0000-0000-000000000006', origin: 'Category 5 Node', destination: 'Adjacent Node', flatRate: 30.0 },
     { id: '00000000-0000-0000-0000-000000000007', origin: 'Category 5 Node', destination: 'Opposite Node', flatRate: 35.0 },
   ];

@@ -17,7 +17,7 @@ This document describes the architectural state, development status, verificatio
 - **Port**: `3000` with `/api` and `/uploads` proxied to backend `3002`.
 - **Offline Storage**: IndexedDB database `iaw_db` via Dexie.js with stores `waybill_events`, `media_blobs`, and `meta`.
 - **PWA**: Service worker via `vite-plugin-pwa` for offline app-shell caching.
-- **Auth UI**: Dual-login tabs — Driver (username + 4-digit PIN) and Dispatcher (email + password); legacy `dispatch`/`0000` shortcut preserved on driver tab.
+- **Auth UI**: Dual-login tabs — Driver (username + 4-digit PIN) and Dispatcher (email + password).
 
 ---
 
@@ -49,6 +49,9 @@ This document describes the architectural state, development status, verificatio
 
 ### Database Initialization
 ```bash
+cp backend/.env.example backend/.env
+# Set SEED_DISPATCHER_PASSWORD and SEED_DRIVER_PINS in backend/.env
+
 psql -d postgres -c "CREATE ROLE postgres WITH LOGIN PASSWORD 'postgres' SUPERUSER;"
 psql -d postgres -c "CREATE DATABASE iaw_courier OWNER postgres;"
 ```
@@ -61,14 +64,7 @@ cd backend && npx prisma db push && npx ts-node src/seed.ts && cd ..
 npm run dev          # Starts backend :3002 + frontend :3000
 ```
 
-### Test Credentials (seed data)
-| Role | Login | API Credentials |
-|---|---|---|
-| Driver 1 | `driver1` / `1111` | PIN `1111` → `drv-01` |
-| Driver 2 | `driver2` / `2222` | PIN `2222` → `drv-02` |
-| Driver 3 | `driver3` / `3333` | PIN `3333` → `drv-03` |
-| Driver 4 | `driver4` / `4444` | PIN `4444` → `drv-04` |
-| Dispatcher | **Driver tab:** `dispatch` / `0000` — **or Dispatcher tab:** `dispatcher@example.com` / `password123` |
+Seed credentials and E2E vars live in `backend/.env` (gitignored) — see `backend/.env.example` and `.env.test.example`. No login credentials are committed to the repo.
 
 ### Seed Waybills
 - **W-001**: Assigned to `drv-01`, status `PICKED_UP`
@@ -124,13 +120,13 @@ The legacy Expo `mobile/` prototype was removed; the React PWA is the sole clien
 ### Driver pickup / delivery
 - **Pickup wizard** (`PickupPage.tsx` + `LocationQuickSelect.tsx`): 3-step flow (Pickup → Dropoff → Sign stepper label); CSV-derived top-6 quick-select chips with **More...** / **Other** progressive disclosure; `selectedPickupKey` conditional dropoffs; auto-fill from `suggestions.json`; saves at step 2.
 - **Pending dropoff gating** (`pendingDropoff.ts`, `DashboardPage.tsx`, `SignOffPage.tsx`): PICKED_UP waybills with placeholder dropoff (`Pending Dropoff` / `Pending Address`) open pickup wizard step 2 before sign-off or quick delivery confirm.
-- **Pricing** (`pricing.ts`): Bus (ON) dropoff $15; Airport dropoff $75; mirrored in backend + CSV location mapper.
+- **Pricing** (`pricing.ts`): Category-based rules in code + DB route rates; mirrored in backend + CSV location mapper.
 - **CSV seed pipeline** (`backend/src/utils/archiveCsvImporter.ts`, `csvLocationMapper.ts`): Adapted from `server.js` + `analyze_csv.py`; seeds HIST-* records and writes `frontend/src/data/topPickups.json`.
 - **Waybill list API** (`GET /api/waybills`): RBAC-filtered list; dashboard loads seeded HIST-* + W-001..003.
 - **Sign-off** (`SignOffPage.tsx`): Signature canvas, printed name, POD photo upload to blob queue.
 - **Dispatch dashboard** (`DashboardPage.tsx`): Active/Pending Price/Completed tabs, interactive driver assignment via `WAYBILL_ASSIGNED` events, pending price modal (`DISPATCHER_OVERRIDE` + `pricingTotalCost`), completed search/date filters, rush badges, price column, conflict badges + retry UI.
 - **Accounting** (`AccountingPage.tsx`): Monthly invoice generator + archive list; **Print/View PDF** via browser print; **Payroll** tab with employee CRUD via `/api/admin/employees`.
-- **Completed waybill actions** (`CompletedWaybillModal.tsx`, `waybillPrint.ts`, `waybillEmail.ts`): Capture icons (✍️/📷) on Completed tab; row click opens detail modal with Print + mailto email to `iaw@iawcourier.com`.
+- **Completed waybill actions** (`CompletedWaybillModal.tsx`, `waybillPrint.ts`, `waybillEmail.ts`): Capture icons (✍️/📷) on Completed tab; row click opens detail modal with Print + mailto email via `VITE_BUSINESS_EMAIL`.
 - **Driver pending pickup**: Dashboard **Pick Up** / row click opens `PickupPage` with `editWaybill` hydration; save emits `WAYBILL_PICKED_UP` (not duplicate `WAYBILL_CREATED`).
 - **Driver action column fix**: Driver list scoped to assigned jobs only (`driverId === session.driverId`); Pick Up button shown for assigned DRAFT/PICKED_UP rows.
 - **Pickup UX**: Delivery "Other" clears to empty with dispatch note placeholder; weight "Enter weight" validates integer &gt; 75 lbs.
@@ -187,3 +183,9 @@ The legacy Expo `mobile/` prototype was removed; the React PWA is the sole clien
 2. **M9: Adversarial Hardening (Tier 5)** — Bruteforce PIN lockout, token revocation, concurrency conflict handling, large media optimization.
 3. **QuickBooks Online Integration** — OAuth2, invoice/journal entry sync.
 4. **Production Deployment** — Fly.io PostgreSQL, environment secrets, CI pipeline.
+
+---
+
+## 8. Sensitive Data Redaction (2026-07-02)
+
+Operational credentials, real business archive CSV, pricing tables in docs, and hardcoded auth shortcuts were removed from the public repo. Seed/E2E credentials are env-only (`SEED_*` in `backend/.env`, `.env.test.example`). Synthetic fixtures: `docs/archive.example.csv`, `frontend/src/data/suggestions.json`. Real archive CSV is gitignored. Full exposure assessment: `docs/SAFETY_AUDIT.md`.

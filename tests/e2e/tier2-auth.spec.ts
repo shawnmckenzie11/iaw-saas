@@ -1,32 +1,9 @@
 import { test, expect } from '@playwright/test';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../../backend/src/config/db';
+import { e2eCredentials, getDispatcherToken } from './credentials';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'iaw-dev-jwt-secret';
-
-// Helper to decode JWT payload and inspect claims
-function decodeJWT(token: string): any {
-  const parts = token.split('.');
-  if (parts.length !== 3) {
-    throw new Error('Invalid JWT format');
-  }
-  const payload = parts[1];
-  const decoded = Buffer.from(payload, 'base64').toString('utf-8');
-  return JSON.parse(decoded);
-}
-
-// Helper to authenticate a dispatcher and get token
-async function getDispatcherToken(request: any): Promise<string> {
-  const response = await request.post('/api/auth/dispatcher/login', {
-    data: {
-      email: 'dispatcher@example.com',
-      password: 'password123'
-    }
-  });
-  expect(response.status()).toBe(200);
-  const body = await response.json();
-  return body.token;
-}
 
 test.describe('Feature 1: Driver Pin Authentication (Tier 2)', () => {
   // F1-T2-01: Unauthorized Endpoint Access
@@ -41,7 +18,7 @@ test.describe('Feature 1: Driver Pin Authentication (Tier 2)', () => {
   test('F1-T2-02: Malformed JWT Signature Rejection', async ({ request }) => {
     // Modify signature of a valid token
     const loginResponse = await request.post('/api/auth/driver/login', {
-      data: { pin: '1111' }
+      data: { pin: e2eCredentials.driver1Pin }
     });
     expect(loginResponse.status()).toBe(200);
     const { token } = await loginResponse.json();
@@ -90,7 +67,7 @@ test.describe('Feature 1: Driver Pin Authentication (Tier 2)', () => {
 
     // Account transitions to a temporary locked state (423 Locked)
     const lockedRes = await request.post('/api/auth/driver/login', {
-      data: { pin: '1111', driverId: 'drv-01' }
+      data: { pin: e2eCredentials.driver1Pin, driverId: 'drv-01' }
     });
     expect(lockedRes.status()).toBe(423);
   });
@@ -106,7 +83,7 @@ test.describe('Feature 2: Dispatcher Credentials Authentication (Tier 2)', () =>
   // F2-T2-02: Driver Role Rejection on Dispatcher Routes
   test('F2-T2-02: Driver Role Rejection on Dispatcher Routes', async ({ request }) => {
     const driverResponse = await request.post('/api/auth/driver/login', {
-      data: { pin: '1111' }
+      data: { pin: e2eCredentials.driver1Pin }
     });
     const { token } = await driverResponse.json();
 
@@ -136,10 +113,10 @@ test.describe('Feature 2: Dispatcher Credentials Authentication (Tier 2)', () =>
   // F2-T2-04: Password Hashing Integrity Check
   test('F2-T2-04: Password Hashing Integrity Check', async () => {
     const dispatcher = await prisma.dispatcher.findUnique({
-      where: { email: 'dispatcher@example.com' }
+      where: { email: e2eCredentials.dispatcherEmail }
     });
     expect(dispatcher).not.toBeNull();
-    expect(dispatcher!.passwordHash).not.toBe('password123');
+    expect(dispatcher!.passwordHash).not.toBe(e2eCredentials.dispatcherPassword);
     expect(dispatcher!.passwordHash.startsWith('$2')).toBe(true); // bcrypt prefix
   });
 
@@ -167,6 +144,6 @@ test.describe('Feature 2: Dispatcher Credentials Authentication (Tier 2)', () =>
 
     // Reload the page: the API fetch will fail with 401, triggering logout
     await page.reload();
-    await expect(page.getByPlaceholder('e.g. driver1 or dispatch')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Driver (PIN)' })).toBeVisible();
   });
 });

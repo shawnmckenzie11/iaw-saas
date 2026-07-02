@@ -109,11 +109,6 @@ export async function authenticateUser(
     return loginDispatcher(usernameOrEmail, passcodeOrPassword);
   }
 
-  // Legacy shortcut: dispatch / 0000 on the driver tab (E2E + README compatibility)
-  if (userLower === 'dispatch' && passcodeOrPassword === '0000') {
-    return loginDispatcher('dispatcher@example.com', 'password123');
-  }
-
   if (!/^\d{4}$/.test(passcodeOrPassword)) {
     return null;
   }

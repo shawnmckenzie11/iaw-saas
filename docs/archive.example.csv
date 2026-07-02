@@ -1,0 +1,4 @@
+Timestamp,Pick Up Location,Destination,Vehicle Type,Date of Delivery,Priority ,Business or Residential?,Additional Comments,Description of Parcel,Name,Phone Number,Requested Time of Pick-Up
+2026-06-01 09:00:00,Acme Warehouse,Gamma Depot,Car,2026-06-01,Regular,Business,,Synthetic parcel A,Test Contact One,555-0100,09:30
+2026-06-02 10:15:00,Beta Supply Co.,Acme Warehouse,Car,2026-06-02,Regular,Business,,Synthetic parcel B,Test Contact Two,555-0101,10:45
+2026-06-03 14:30:00,Gamma Depot,Beta Supply Co.,Car,2026-06-03,RUSH,Business,Rush test row,Synthetic parcel C,Test Contact Three,555-0102,15:00

@@ -1,4 +1,9 @@
 import { test, expect } from '@playwright/test';
+import {
+  e2eCredentials,
+  loginDispatcherViaUi,
+  loginDriverViaUi,
+} from './credentials';
 
 // Self-contained helper to decode JWT payload and inspect claims
 function decodeJWT(token: string): any {
@@ -15,7 +20,7 @@ test.describe('Feature 1: Driver Pin Authentication (Tier 1)', () => {
   // F1-T1-01: Valid Driver PIN Authentication
   test('F1-T1-01: Valid Driver PIN Authentication', async ({ request }) => {
     const response = await request.post('/api/auth/driver/login', {
-      data: { pin: '1111' }
+      data: { pin: e2eCredentials.driver1Pin }
     });
     
     expect(response.status()).toBe(200);
@@ -55,7 +60,7 @@ test.describe('Feature 1: Driver Pin Authentication (Tier 1)', () => {
   // F1-T1-04: JWT Expiration Verification
   test('F1-T1-04: JWT Expiration Verification', async ({ request }) => {
     const response = await request.post('/api/auth/driver/login', {
-      data: { pin: '1111' }
+      data: { pin: e2eCredentials.driver1Pin }
     });
     expect(response.status()).toBe(200);
     const body = await response.json();
@@ -82,11 +87,7 @@ test.describe('Feature 1: Driver Pin Authentication (Tier 1)', () => {
 
   // UI Flow verification using standard browser page
   test('UI Login Flow - Driver', async ({ page }) => {
-    await page.goto('/');
-    await expect(page.getByPlaceholder('e.g. driver1 or dispatch')).toBeVisible();
-    await page.getByPlaceholder('e.g. driver1 or dispatch').fill('driver1');
-    await page.getByPlaceholder('4-digit passcode').fill('1111');
-    await page.getByText('SIGN IN').click();
+    await loginDriverViaUi(page);
     await expect(page.getByText('Pending Sync')).toBeVisible();
   });
 });
@@ -96,8 +97,8 @@ test.describe('Feature 2: Dispatcher Credentials Authentication (Tier 1)', () =>
   test('F2-T1-01: Valid Dispatcher Credentials Login', async ({ request }) => {
     const response = await request.post('/api/auth/dispatcher/login', {
       data: {
-        email: 'dispatcher@example.com',
-        password: 'password123'
+        email: e2eCredentials.dispatcherEmail,
+        password: e2eCredentials.dispatcherPassword
       }
     });
     expect(response.status()).toBe(200);
@@ -113,7 +114,7 @@ test.describe('Feature 2: Dispatcher Credentials Authentication (Tier 1)', () =>
   test('F2-T1-02: Invalid Password Rejection', async ({ request }) => {
     const response = await request.post('/api/auth/dispatcher/login', {
       data: {
-        email: 'dispatcher@example.com',
+        email: e2eCredentials.dispatcherEmail,
         password: 'wrongpassword'
       }
     });
@@ -127,7 +128,7 @@ test.describe('Feature 2: Dispatcher Credentials Authentication (Tier 1)', () =>
     const response = await request.post('/api/auth/dispatcher/login', {
       data: {
         email: 'dispatcher_at_domain.com',
-        password: 'password123'
+        password: e2eCredentials.dispatcherPassword
       }
     });
     expect(response.status()).toBe(400);
@@ -140,7 +141,7 @@ test.describe('Feature 2: Dispatcher Credentials Authentication (Tier 1)', () =>
     const response = await request.post('/api/auth/dispatcher/login', {
       data: {
         email: 'unregistered@example.com',
-        password: 'password123'
+        password: e2eCredentials.dispatcherPassword
       }
     });
     expect(response.status()).toBe(401);
@@ -152,7 +153,7 @@ test.describe('Feature 2: Dispatcher Credentials Authentication (Tier 1)', () =>
   test('F2-T1-05: Missing Payload Parameters', async ({ request }) => {
     const response = await request.post('/api/auth/dispatcher/login', {
       data: {
-        email: 'dispatcher@example.com'
+        email: e2eCredentials.dispatcherEmail
       }
     });
     expect(response.status()).toBe(400);
@@ -162,11 +163,7 @@ test.describe('Feature 2: Dispatcher Credentials Authentication (Tier 1)', () =>
 
   // UI Flow verification using standard browser page
   test('UI Login Flow - Dispatcher', async ({ page }) => {
-    await page.goto('/');
-    await expect(page.getByPlaceholder('e.g. driver1 or dispatch')).toBeVisible();
-    await page.getByPlaceholder('e.g. driver1 or dispatch').fill('dispatch');
-    await page.getByPlaceholder('4-digit passcode').fill('0000');
-    await page.getByText('SIGN IN').click();
+    await loginDispatcherViaUi(page);
     await expect(page.getByText('Dispatch')).toBeVisible();
   });
 });

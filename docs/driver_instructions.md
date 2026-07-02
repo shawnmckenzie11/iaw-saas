@@ -18,7 +18,7 @@ Run these steps as soon as you load the cargo into your vehicle:
 
 1. Tap the large blue **➕ NEW PICKUP (WAYBILL)** button on the Dashboard.
 2. Fill out the pickup details:
-   * **Location/Business Name** (e.g., Wajax, Redpath)
+   * **Location/Business Name** (e.g., Acme Parts Co.)
    * **Pickup Address**
    * **Contact Name & Phone** (if available)
 3. Enter the Dropoff destination details.

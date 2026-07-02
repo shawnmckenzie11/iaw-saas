@@ -1,5 +1,6 @@
 import type { Waybill } from '../types/waybill';
 import { waybillPrice } from '../types/waybill';
+import { IAW_BUSINESS_EMAIL } from '../config/businessContact';
 
 export interface InvoicePrintRecord {
   invoiceNumber: string;
@@ -267,7 +268,7 @@ export function buildInvoicePrintHtml(
     <div class="sign-block">
       <div>
         <p>Payment due within 30 days of invoice date.</p>
-        <p>Remittance EFT: payments@iawcourier.com</p>
+        <p>Remittance EFT: ${IAW_BUSINESS_EMAIL || 'billing@example.com'}</p>
       </div>
       <div>
         <div class="sign-line">Authorized Signature</div>

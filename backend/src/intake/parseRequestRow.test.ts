@@ -19,7 +19,7 @@ describe('parseRequestFields', () => {
       'Business',
       'Please hurry',
       'Drill Gear Assy',
-      'Shawn McKenzie',
+      'Test Contact One',
       '555-0199',
       '16:00',
     ];
@@ -31,7 +31,7 @@ describe('parseRequestFields', () => {
     expect(parsed?.priority).toBe('RUSH');
     expect(parsed?.vehicleType).toBe('TRUCK');
     expect(parsed?.requiresManualPricing).toBe(false);
-    expect(parsed?.contactName).toBe('Shawn McKenzie');
+    expect(parsed?.contactName).toBe('Test Contact One');
     expect(parsed?.contactPhone).toBe('555-0199');
     expect(parsed?.additionalComments).toBe('Please hurry');
     expect(parsed?.parcelDescription).toBe('Drill Gear Assy');

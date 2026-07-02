@@ -1,12 +1,9 @@
 {
-  "generatedAt": "2026-07-02",
+  "generatedAt": "2026-01-01",
   "windowDays": 365,
   "topPickups": [
-    "Mobile Parts Inc.",
-    "Toromont",
-    "Sandvik Mining",
-    "Brankor Trophies",
-    "Jannetec",
-    "Wajax"
+    "Acme Warehouse",
+    "Beta Supply Co.",
+    "Gamma Depot"
   ]
 }

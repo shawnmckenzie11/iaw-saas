@@ -14,13 +14,14 @@
     "test": "node scripts/test-all.mjs",
     "seed": "npx ts-node backend/src/seed.ts",
     "reseed:archive": "npx ts-node backend/src/runArchiveReseed.ts",
-  "setup:fly": "bash scripts/setup-fly.sh",
+    "setup:fly": "bash scripts/setup-fly.sh",
     "postinstall": "npm install --prefix backend && npm install --prefix frontend"
   },
   "devDependencies": {
     "@playwright/test": "^1.45.0",
     "@types/node": "^20.0.0",
     "concurrently": "^9.0.0",
+    "dotenv": "^17.4.2",
     "typescript": "^5.0.0"
   }
 }

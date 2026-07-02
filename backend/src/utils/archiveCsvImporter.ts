@@ -23,16 +23,22 @@ function repoPath(...segments: string[]): string {
   return path.join(process.cwd(), '..', ...segments);
 }
 
-const DEFAULT_CSV_PATH = repoPath('docs', 'BACKUP of Requests - Archive.csv');
+const LOCAL_ARCHIVE_CSV_PATH = repoPath('docs', 'BACKUP of Requests - Archive.csv');
+const EXAMPLE_CSV_PATH = repoPath('docs', 'archive.example.csv');
 const CONTAINER_CSV_PATH = path.join(process.cwd(), 'data', 'archive.csv');
+const CONTAINER_EXAMPLE_CSV_PATH = path.join(process.cwd(), 'data', 'archive.example.csv');
 
 /**
- * Resolves the archive CSV path for local dev or Fly container layouts.
+ * Resolves the archive CSV path for local dev, optional mounts, or synthetic example data.
  */
 export function resolveArchiveCsvPath(): string {
-  if (fs.existsSync(DEFAULT_CSV_PATH)) return DEFAULT_CSV_PATH;
+  const envPath = process.env.ARCHIVE_CSV_PATH?.trim();
+  if (envPath && fs.existsSync(envPath)) return envPath;
+  if (fs.existsSync(LOCAL_ARCHIVE_CSV_PATH)) return LOCAL_ARCHIVE_CSV_PATH;
   if (fs.existsSync(CONTAINER_CSV_PATH)) return CONTAINER_CSV_PATH;
-  return DEFAULT_CSV_PATH;
+  if (fs.existsSync(EXAMPLE_CSV_PATH)) return EXAMPLE_CSV_PATH;
+  if (fs.existsSync(CONTAINER_EXAMPLE_CSV_PATH)) return CONTAINER_EXAMPLE_CSV_PATH;
+  return EXAMPLE_CSV_PATH;
 }
 
 const DEFAULT_TOP_PICKUPS_PATH = repoPath('frontend', 'src', 'data', 'topPickups.json');

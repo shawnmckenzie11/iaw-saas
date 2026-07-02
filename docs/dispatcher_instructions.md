@@ -6,7 +6,7 @@ This guide explains how dispatchers and system administrators manage the backend
 
 ## 🗺️ 1. Managing Route Rates (Tier 1 Pricing)
 
-Flat-rate billing for common corporate routes (Jannatec, Redpath, Wajax, Sandvik, etc.) is managed via the `route_rates` table. This allows rates to be adjusted dynamically without code deployments.
+Flat-rate billing for common corporate routes is managed via the `route_rates` table. This allows rates to be adjusted dynamically without code deployments.
 
 ### How Tier 1 Rates Work
 * When a driver logs a pickup, the system checks the `route_rates` table for a record matching the pickup `origin` and dropoff `destination`.
@@ -14,9 +14,9 @@ Flat-rate billing for common corporate routes (Jannatec, Redpath, Wajax, Sandvik
 * To adjust a flat rate, you insert a new record into the `route_rates` table:
   ```sql
   INSERT INTO route_rates (origin, destination, flat_rate, effective_date)
-  VALUES ('KOMATSU', 'WAJAX', 55.00, '2026-07-01 00:00:00-04');
+  VALUES ('ORIGIN_SITE', 'DEST_SITE', 55.00, '2026-07-01 00:00:00-04');
   ```
-* All deliveries scheduled after that `effective_date` will automatically receive the new rate of $55.00, while historical deliveries retain their original rates for auditing.
+* All deliveries scheduled after that `effective_date` will automatically receive the new flat rate, while historical deliveries retain their original rates for auditing.
 
 ---
 
@@ -24,7 +24,7 @@ Flat-rate billing for common corporate routes (Jannatec, Redpath, Wajax, Sandvik
 
 Some deliveries do not match pre-configured Tier 1 flat routes. These are handled as follows:
 
-* **TIER 2 (Standard In-Town - Non-Flat)**: Placed at a default rate of $60.00. Dispatchers can inspect these in the dashboard and adjust the `pricing_total_cost` base rate as needed.
+* **TIER 2 (Standard In-Town - Non-Flat)**: Placed at the configured default in-town rate. Dispatchers can inspect these in the dashboard and adjust the `pricing_total_cost` base rate as needed.
 * **TIER 3 (Out-of-Town)**: Calculated manually. The driver captures the route details, and the dispatcher inputs the custom cost parameters into the billing records.
 * **Tracking Overrides**: If you manually adjust a delivery's cost, ensure the system flags `pricing_is_manually_adjusted = TRUE` and documents the change in `pricing_override_reason` (e.g. "Heavy weather delay surcharge").
 

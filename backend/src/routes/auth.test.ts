@@ -1,11 +1,13 @@
 import request from 'supertest';
 import app from '../app';
 import { prisma } from '../config/db';
+import { loadTestCredentials } from '../seedConfig';
 
 describe('M2 Dual Auth & RBAC Boundaries Integration Tests', () => {
   let dispatcherToken: string;
   let driver1Token: string;
   let driver2Token: string;
+  const credentials = loadTestCredentials();
 
   beforeAll(async () => {
     // Ensure test records are clean
@@ -79,15 +81,15 @@ describe('M2 Dual Auth & RBAC Boundaries Integration Tests', () => {
   });
 
   describe('Dispatcher Authentication', () => {
-    const credentials = {
-      email: 'dispatcher@example.com',
-      password: 'password123',
+    const dispatcherLogin = {
+      email: credentials.dispatcherEmail,
+      password: credentials.dispatcherPassword,
     };
 
     it('should authenticate dispatcher on main route /dispatcher/login', async () => {
       const res = await request(app)
         .post('/api/auth/dispatcher/login')
-        .send(credentials);
+        .send(dispatcherLogin);
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('token');
       dispatcherToken = res.body.token;
@@ -96,7 +98,7 @@ describe('M2 Dual Auth & RBAC Boundaries Integration Tests', () => {
     it('should authenticate dispatcher on alias route /login/dispatcher', async () => {
       const res = await request(app)
         .post('/api/auth/login/dispatcher')
-        .send(credentials);
+        .send(dispatcherLogin);
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('token');
     });
@@ -104,7 +106,7 @@ describe('M2 Dual Auth & RBAC Boundaries Integration Tests', () => {
     it('should deny dispatcher login with wrong password', async () => {
       const res = await request(app)
         .post('/api/auth/dispatcher/login')
-        .send({ email: 'dispatcher@example.com', password: 'wrong' });
+        .send({ email: credentials.dispatcherEmail, password: 'wrong' });
       expect(res.status).toBe(401);
       expect(res.body).toHaveProperty('error');
     });
@@ -112,25 +114,25 @@ describe('M2 Dual Auth & RBAC Boundaries Integration Tests', () => {
     it('should deny dispatcher login with malformed email', async () => {
       const res = await request(app)
         .post('/api/auth/dispatcher/login')
-        .send({ email: 'notanemail', password: 'password123' });
+        .send({ email: 'notanemail', password: credentials.dispatcherPassword });
       expect(res.status).toBe(400);
     });
   });
 
   describe('Driver PIN Authentication', () => {
-    it('should authenticate Driver 1 with PIN 1111 on /driver/login', async () => {
+    it('should authenticate Driver 1 with seeded PIN on /driver/login', async () => {
       const res = await request(app)
         .post('/api/auth/driver/login')
-        .send({ pin: '1111' });
+        .send({ pin: credentials.driver1Pin });
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('token');
       driver1Token = res.body.token;
     });
 
-    it('should authenticate Driver 2 with PIN 2222 on alias /login/driver', async () => {
+    it('should authenticate Driver 2 with seeded PIN on alias /login/driver', async () => {
       const res = await request(app)
         .post('/api/auth/login/driver')
-        .send({ pin: '2222' });
+        .send({ pin: credentials.driver2Pin });
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('token');
       driver2Token = res.body.token;

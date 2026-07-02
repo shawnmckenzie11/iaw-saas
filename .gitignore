@@ -10,6 +10,12 @@ invoices.json
 backend/.env
 .env
 .env.local
+.env.test
+frontend/.env
+frontend/.env.local
+
+# Operational archive (use docs/archive.example.csv in repo; mount real CSV locally)
+docs/BACKUP of Requests - Archive.csv
 
 # Build & test artifacts
 backend/dist/

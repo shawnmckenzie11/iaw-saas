@@ -1,17 +1,5 @@
 import { test, expect } from '@playwright/test';
-
-// Helper to authenticate a dispatcher and get token
-async function getDispatcherToken(request: any): Promise<string> {
-  const response = await request.post('/api/auth/dispatcher/login', {
-    data: {
-      email: 'dispatcher@example.com',
-      password: 'password123'
-    }
-  });
-  expect(response.status()).toBe(200);
-  const body = await response.json();
-  return body.token;
-}
+import { e2eCredentials, getDispatcherToken } from './credentials';
 
 test.describe('Feature 5: Event-Sourced Operations and Replay (Tier 1)', () => {
   let dispatcherToken: string;
@@ -135,7 +123,7 @@ test.describe('Feature 5: Event-Sourced Operations and Replay (Tier 1)', () => {
         eventType: 'WAYBILL_DELIVERED',
         data: {
           deliveredAt: new Date().toISOString(),
-          signatureName: 'Sarah Connor'
+          signatureName: 'Synthetic Signer'
         }
       }
     });

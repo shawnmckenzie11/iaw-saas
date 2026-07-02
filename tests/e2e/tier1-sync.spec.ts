@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { e2eCredentials, getDriverToken, loginDriverViaUi } from './credentials';
 
 // Helper to interact with IndexedDB inside the browser context
 async function getIndexedDBCount(page: any, storeName: string): Promise<number> {
@@ -74,10 +75,7 @@ test.describe('Feature 4: Offline Local IndexedDB (Tier 1)', () => {
 
   test.beforeEach(async ({ page, context }) => {
     await context.setOffline(false);
-    await page.goto('/');
-    await page.getByPlaceholder('e.g. driver1 or dispatch').fill('driver1');
-    await page.getByPlaceholder('4-digit passcode').fill('1111');
-    await page.getByText('SIGN IN').click();
+    await loginDriverViaUi(page);
   });
 
   // F4-T1-01: Offline Waybill Data Buffering
@@ -92,9 +90,9 @@ test.describe('Feature 4: Offline Local IndexedDB (Tier 1)', () => {
     await page.getByText('➕ NEW PICKUP (WAYBILL)').click();
 
     // 3. Quick-select pickup chip (CSV-derived top-6) then dropoff
-    await page.getByRole('button', { name: 'Wajax' }).click();
+    await page.getByRole('button', { name: 'Acme Warehouse' }).click();
     await page.getByText('Confirm Drop Off Location ➡').click();
-    await page.getByRole('button', { name: 'Toromont' }).click();
+    await page.getByRole('button', { name: 'Beta Supply Co.' }).click();
     await page.getByText('💾 COMPLETE PICKUP & LOG WAYBILL').click();
 
     // 4. Verify client buffers event in IndexedDB and increments counter
@@ -217,7 +215,7 @@ test.describe('Feature 6: Dual-Sync Endpoints Coordination (Tier 1)', () => {
   test.beforeAll(async ({ request }) => {
     // Acquire driver token for API Sync endpoint validation
     const response = await request.post('/api/auth/driver/login', {
-      data: { pin: '1111' }
+      data: { pin: e2eCredentials.driver1Pin }
     });
     const body = await response.json();
     driverToken = body.token;

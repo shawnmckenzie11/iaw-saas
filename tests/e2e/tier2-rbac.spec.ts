@@ -1,27 +1,5 @@
 import { test, expect } from '@playwright/test';
-
-// Helper to authenticate a driver and get token
-async function getDriverToken(request: any, pin: string): Promise<string> {
-  const response = await request.post('/api/auth/driver/login', {
-    data: { pin }
-  });
-  expect(response.status()).toBe(200);
-  const body = await response.json();
-  return body.token;
-}
-
-// Helper to authenticate a dispatcher and get token
-async function getDispatcherToken(request: any): Promise<string> {
-  const response = await request.post('/api/auth/dispatcher/login', {
-    data: {
-      email: 'dispatcher@example.com',
-      password: 'password123'
-    }
-  });
-  expect(response.status()).toBe(200);
-  const body = await response.json();
-  return body.token;
-}
+import { e2eCredentials, getDispatcherToken, getDriverToken } from './credentials';
 
 test.describe('Feature 3: API RBAC Gatekeeping (Tier 2)', () => {
   let driver1Token: string;
@@ -30,8 +8,8 @@ test.describe('Feature 3: API RBAC Gatekeeping (Tier 2)', () => {
 
   test.beforeAll(async ({ request }) => {
     // Acquire tokens
-    driver1Token = await getDriverToken(request, '1111');
-    driver2Token = await getDriverToken(request, '2222');
+    driver1Token = await getDriverToken(request, e2eCredentials.driver1Pin);
+    driver2Token = await getDriverToken(request, e2eCredentials.driver2Pin);
     dispatcherToken = await getDispatcherToken(request);
 
     // Helper to ensure a waybill exists and is assigned

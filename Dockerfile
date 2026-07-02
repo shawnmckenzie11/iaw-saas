@@ -32,7 +32,8 @@ COPY --from=backend-build /app/backend/dist ./dist
 COPY --from=backend-build /app/backend/node_modules/.prisma ./node_modules/.prisma
 COPY backend/prisma ./prisma
 COPY --from=frontend-build /app/frontend/dist /app/frontend/dist
-COPY ["docs/BACKUP of Requests - Archive.csv", "./data/archive.csv"]
+# Synthetic archive fixture only — mount real CSV at /app/backend/data/archive.csv when needed
+COPY docs/archive.example.csv ./data/archive.example.csv
 
 EXPOSE 8080
 CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]

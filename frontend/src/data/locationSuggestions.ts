@@ -22,12 +22,9 @@ export const TOP_PICKUPS: string[] =
 
 /** @deprecated Use TOP_PICKUPS from archive stats */
 export const POPULAR_PICKUPS = TOP_PICKUPS.length > 0 ? TOP_PICKUPS : [
-  'Mobile Parts Inc.',
-  'Wajax',
-  'Sandvik Mining',
-  'Onaping Depth Project (ODP)',
-  'Komatsu (260)',
-  'Epiroc Lively',
+  'Acme Warehouse',
+  'Beta Supply Co.',
+  'Gamma Depot',
 ];
 
 /**

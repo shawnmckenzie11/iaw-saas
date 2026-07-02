@@ -1,27 +1,11 @@
 import { test, expect } from '@playwright/test';
-
-// Helper to authenticate a driver and get token
-async function getDriverToken(request: any, pin: string): Promise<string> {
-  const response = await request.post('/api/auth/driver/login', {
-    data: { pin }
-  });
-  expect(response.status()).toBe(200);
-  const body = await response.json();
-  return body.token;
-}
-
-// Helper to authenticate a dispatcher and get token
-async function getDispatcherToken(request: any): Promise<string> {
-  const response = await request.post('/api/auth/dispatcher/login', {
-    data: {
-      email: 'dispatcher@example.com',
-      password: 'password123'
-    }
-  });
-  expect(response.status()).toBe(200);
-  const body = await response.json();
-  return body.token;
-}
+import {
+  e2eCredentials,
+  getDispatcherToken,
+  getDriverToken,
+  loginDispatcherViaUi,
+  loginDriverViaUi,
+} from './credentials';
 
 test.describe('Feature 3: API RBAC Gatekeeping (Tier 1)', () => {
   let driver1Token: string;
@@ -30,8 +14,8 @@ test.describe('Feature 3: API RBAC Gatekeeping (Tier 1)', () => {
 
   test.beforeAll(async ({ request }) => {
     // Acquire active role tokens for RBAC validation
-    driver1Token = await getDriverToken(request, '1111');
-    driver2Token = await getDriverToken(request, '2222');
+    driver1Token = await getDriverToken(request, e2eCredentials.driver1Pin);
+    driver2Token = await getDriverToken(request, e2eCredentials.driver2Pin);
     dispatcherToken = await getDispatcherToken(request);
 
     // Helper to ensure a waybill exists and is optionally assigned to a driver
@@ -144,10 +128,7 @@ test.describe('Feature 3: API RBAC Gatekeeping (Tier 1)', () => {
   // UI Flow verification verifying RBAC limits on Dashboard
   test('UI RBAC View - Driver vs Dispatcher Controls', async ({ page }) => {
     // 1. Log in as Driver. Check that Admin controls / Accounting navigation are hidden
-    await page.goto('/');
-    await page.getByPlaceholder('e.g. driver1 or dispatch').fill('driver1');
-    await page.getByPlaceholder('4-digit passcode').fill('1111');
-    await page.getByText('SIGN IN').click();
+    await loginDriverViaUi(page);
     
     // The "⚙️ Dispatch" toggle and accounting buttons should not be present or active
     await expect(page.getByText('⚙️ Dispatch')).not.toBeVisible();
@@ -157,9 +138,7 @@ test.describe('Feature 3: API RBAC Gatekeeping (Tier 1)', () => {
     await page.getByText('Sign Out').click();
 
     // 2. Log in as Dispatcher. Check that Admin controls / Accounting are visible
-    await page.getByPlaceholder('e.g. driver1 or dispatch').fill('dispatch');
-    await page.getByPlaceholder('4-digit passcode').fill('0000');
-    await page.getByText('SIGN IN').click();
+    await loginDispatcherViaUi(page);
     
     await expect(page.getByText('⚙️ Dispatch')).toBeVisible();
     await expect(page.getByText('📊 ACCOUNTING & INVOICES')).toBeVisible();

@@ -23,8 +23,8 @@ graph TD
 1. **Offline-first PWA**: Lightweight events and heavy blobs sync on separate queues with visible pending counters.
 2. **Cryptographic signature integrity**: Signature vectors are hashed with waybill metadata for tamper evidence (post-MVP hardening).
 3. **Append-only event sourcing**: Clients never mutate read tables directly; the server replays `waybill_events` into materialized state.
-4. **Database-driven rates**: Flat rates and category rules (Redpath ODP, Victoria Mine, Category 5 nodes, etc.) drive pricing instead of hardcoded UI logic.
-5. **Dual auth + RBAC**: Drivers sign in with **username + 4-digit PIN** (e.g. `driver1` / `1111`); dispatchers sign in with **email + password** (or legacy shortcut `dispatch` / `0000` on the driver tab). JWTs gate every API route.
+4. **Database-driven rates**: Flat rates and category rules in PostgreSQL drive pricing (see `frontend/src/utils/pricing.ts` and `backend/src/utils/pricing.ts`).
+5. **Dual auth + RBAC**: Drivers sign in with **username + 4-digit PIN**; dispatchers sign in with **email + password** on a separate tab. JWTs gate every API route.
 6. **QuickBooks Online alignment**: Operational `status` is separate from `qbo_sync_status` for future invoice sync.
 
 ---
@@ -35,15 +35,15 @@ graph TD
 ├── backend/                # Express + TypeScript + Prisma API (:3002)
 ├── frontend/               # React + Vite PWA with business UI (:3000)
 │   └── src/data/
-│       ├── suggestions.json      # 40+ pickup locations, conditional dropoffs, addresses
-│       └── fallbackWaybills.ts   # Offline cache of seed waybills
+│       ├── suggestions.json      # Synthetic pickup/dropoff fixtures
+│       └── topPickups.json       # Top pickup shortcuts (regenerated on archive seed)
 ├── tests/e2e/              # Playwright Tier 1 specs (F1–F6)
-├── docs/                   # Schema DDL, driver/dispatcher SOPs
+├── docs/                   # Schema DDL, driver/dispatcher SOPs, archive.example.csv
 ├── HANDOFF.md              # Milestone status and verification
 └── TEST_INFRA.md           # Tier 1 feature/test case definitions
 ```
 
-The **frontend PWA** carries the business UI: tabular dispatch dashboard, location autocomplete chips, conditional dropoff routing, and live route price preview via `frontend/src/utils/pricing.ts`.
+The **frontend PWA** carries the business UI: tabular dispatch dashboard, location autocomplete chips, conditional dropoff routing, and live route price preview.
 
 ---
 
@@ -62,10 +62,14 @@ From the **project root**:
 npm install
 ```
 
-### 2. Configure the database
+### 2. Configure environment
 
 ```bash
 cp backend/.env.example backend/.env
+# Edit backend/.env — set SEED_DISPATCHER_PASSWORD and SEED_DRIVER_PINS (never commit real values)
+
+cp frontend/.env.example frontend/.env   # optional: VITE_BUSINESS_EMAIL
+cp .env.test.example .env.test           # optional: E2E credential overrides
 ```
 
 Create the database (once):
@@ -75,11 +79,13 @@ psql -d postgres -c "CREATE ROLE postgres WITH LOGIN PASSWORD 'postgres' SUPERUS
 psql -d postgres -c "CREATE DATABASE iaw_courier OWNER postgres;"
 ```
 
-Push schema and seed synthetic business fixtures (includes last 100 archive CSV rows as `HIST-*` and regenerates `frontend/src/data/topPickups.json`):
+Push schema and seed synthetic fixtures:
 
 ```bash
 cd backend && npx prisma db push && npx ts-node src/seed.ts && cd ..
 ```
+
+Seed requires `SEED_DISPATCHER_PASSWORD` and `SEED_DRIVER_PINS` in `backend/.env`. Optional archive reseed uses `docs/archive.example.csv` or `ARCHIVE_CSV_PATH` pointing to a local CSV (gitignored).
 
 ### 3. Run the app
 
@@ -115,83 +121,19 @@ Redeploy after code changes: `fly deploy --app iaw-saas`
 
 ---
 
-## Business Domain Reference (Seed & Pre-populations)
+## Seed & Test Data
 
-All seed data is **synthetic** — never use real customer PII in fixtures.
+All committed fixtures are **synthetic** — never use real customer PII in the repo.
 
-### Test Accounts
+| Item | Source |
+|------|--------|
+| Driver accounts | `backend/src/seed.ts` — names `Driver One` … `Driver Four`; PINs from `SEED_DRIVER_PINS` |
+| Dispatcher | `SEED_DISPATCHER_EMAIL` + `SEED_DISPATCHER_PASSWORD` in `backend/.env` |
+| Location chips | `frontend/src/data/suggestions.json`, `topPickups.json` |
+| Archive history | `docs/archive.example.csv` (repo); mount real CSV via `ARCHIVE_CSV_PATH` locally |
+| E2E credentials | `.env.test` or same `SEED_*` vars — see `.env.test.example` |
 
-| Role | UI login | API credential | Driver ID |
-|------|----------|----------------|-----------|
-| Driver 1 | `driver1` / `1111` | PIN `1111` | `drv-01` |
-| Driver 2 | `driver2` / `2222` | PIN `2222` | `drv-02` |
-| Driver 3 | `driver3` / `3333` | PIN `3333` | `drv-03` |
-| Driver 4 | `driver4` / `4444` | PIN `4444` | `drv-04` |
-| Dispatcher | **Driver tab:** `dispatch` / `0000` — **or Dispatcher tab:** `dispatcher@example.com` / `password123` | email + password | — |
-
-The login screen has separate **Driver (PIN)** and **Dispatcher** tabs. Driver auth hits `POST /api/auth/driver/login` with the 4-digit PIN; dispatcher auth hits `POST /api/auth/dispatcher/login` with email and password.
-
-### Driver Roster (dispatch chips)
-
-| ID | Name | QBO Driver ID |
-|----|------|---------------|
-| `drv-01` | Shawn McKenzie | 101 |
-| `drv-02` | John Doe | 102 |
-| `drv-03` | Sarah Connor | 103 |
-| `drv-04` | Alex Mercer | 104 |
-
-### Seed Waybills
-
-| Waybill | Driver | Status | Pickup | Dropoff | Cargo |
-|---------|--------|--------|--------|---------|-------|
-| **W-001** | drv-01 | `PICKED_UP` | Wajax (Sudbury) | Redpath Mine (Onaping) | Drill Bits |
-| **W-002** | unassigned | `DRAFT` | Komatsu (Sudbury) | Victoria Mine | Hydraulic Parts |
-| **W-003** | drv-02 | `DRAFT` | Sling Choker (Sudbury) | Creighton Mine | Cables |
-| **W-004** | drv-03 | `DRAFT` | Mobile Parts Inc. | Epiroc Lively | Filters |
-| **W-005** | drv-04 | `PICKED_UP` | Sandvik Mining | Redpath Mine | Safety Gear |
-
-After login as **driver1**, the dashboard shows W-001 (delivery/sign-off). **driver3** sees W-004 (Pick Up); **driver4** sees W-005 (Deliver). Dispatch sees all five with **Active Jobs**, **Pending Price**, and **Completed** tabs.
-
-### Route Rate Table (`route_rates`)
-
-| Origin | Destination | Flat rate |
-|--------|-------------|-----------|
-| Sudbury | Lively | $60.00 |
-| Sudbury | Chelmsford/Hanmer | $50.00 |
-| Sudbury | Val Caron/Azilda | $40.00 |
-| Sudbury | Redpath ODP | $125.00 |
-| Sudbury | Victoria Mine | $120.00 |
-| Category 5 node | Adjacent node | $30.00 |
-| Category 5 node | Opposite node | $35.00 |
-
-Dispatcher-only endpoint: `GET /api/admin/rates`.
-
-### Pricing Categories (client-side rules)
-
-Implemented in `frontend/src/utils/pricing.ts` (mirrored in `backend/src/utils/pricing.ts`):
-
-| Category | Example locations | Base price |
-|----------|-------------------|------------|
-| Bus (ON) | Ontario Northland bus terminal | $15 to bus |
-| Airport | Sudbury Airport | $75 to airport |
-| Category 1 | B&D Manufacturing, Bélanger Construction, Chelmsford/Hanmer | $50 Sudbury ↔ outlying |
-| Category 2 | Mobile Parts, DMC Mining, Val Caron/Azilda | $40 Sudbury ↔ outlying |
-| Category 3 (Redpath ODP) | Onaping Depth Project (ODP) | $125 |
-| Category 4 (Victoria Mining) | Victoria Mine | $120 |
-| Category 5 (4-node cycle) | Wajax, Komatsu, Staples, Sling-Choker, etc. | $30 adjacent / $35 opposite |
-
-Surcharges: **+$7.50 per 100 lbs** over 75 lbs, **+$20 skid**, **+$15 rush**.
-
-### Location Pre-populations
-
-`frontend/src/data/suggestions.json` (41 common pickups) powers:
-
-- **Popular pickup chips** on the New Pickup form — top 6 from archive CSV (regenerated on seed), plus **More...** and **Other** for full `suggestions.json` list
-- **Searchable autocomplete** for pickup and dropoff
-- **Conditional dropoffs** — selecting a pickup narrows likely destinations
-- **Auto-filled addresses** from the `locations` map when a known business is selected
-
-Examples of seeded businesses: Wajax, Komatsu (260), Redpath (Falconbridge Rd), Mobile Parts Inc., Sandvik Mining, Victoria Mine, Staples, Epiroc Lively, Sling-Choker Manufacturing, and 30+ more.
+Login UI: **Driver (PIN)** tab for drivers; **Dispatcher** tab for email/password.
 
 ---
 
@@ -203,11 +145,9 @@ Examples of seeded businesses: Wajax, Komatsu (260), Redpath (Falconbridge Rd), 
 npm test
 ```
 
-Run **exactly** that — do not append comments or extra words after the command.
-
 | Command | What it runs |
 |---------|--------------|
-| `npm test` | Jest backend (2) + Playwright Tier 1 (34) |
+| `npm test` | Jest backend + Playwright Tier 1 |
 | `npm run test:backend` | Backend only |
 | `npm run test:e2e` | Playwright only (auto-starts servers) |
 
@@ -216,6 +156,8 @@ First-time Playwright setup:
 ```bash
 npx playwright install
 ```
+
+Ensure `backend/.env` has seed credentials before running tests.
 
 ---
 

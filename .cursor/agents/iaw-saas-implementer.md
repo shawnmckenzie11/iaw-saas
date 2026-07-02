@@ -49,15 +49,15 @@ You are the dedicated implementation agent for **iaw-saas** — a mobile-first d
 
 ## Seed Data Conventions
 
-Use synthetic fixtures only — never real PII or financial data. Standard test accounts from `backend/src/seed.ts`:
+Use synthetic fixtures only — never real PII or financial data. Credentials are **not** in source:
 
-| Role | Credential | ID |
-|------|-----------|-----|
-| Driver 1 | PIN `1111` | `drv-01` |
-| Driver 2 | PIN `2222` | `drv-02` |
-| Dispatcher | `dispatcher@example.com` / `password123` | — |
+| Variable | Purpose |
+|----------|---------|
+| `SEED_DISPATCHER_EMAIL` | Dispatcher login email |
+| `SEED_DISPATCHER_PASSWORD` | Required for `npm run seed` |
+| `SEED_DRIVER_PINS` | Comma-separated PINs for drv-01 … drv-04 |
 
-Waybills: **W-001** (drv-01, PICKED_UP), **W-002** (unassigned, DRAFT), **W-003** (drv-02, DRAFT).
+Copy `backend/.env.example` and set values locally. E2E tests read the same vars (see `.env.test.example`).
 
 Re-seed when tests need fresh data: `cd backend && npx ts-node src/seed.ts`.
 

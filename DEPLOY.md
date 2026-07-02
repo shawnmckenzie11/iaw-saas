@@ -85,7 +85,7 @@ fly secrets set \
   --app iaw-saas
 ```
 
-**Important:** Change dispatcher password after first login — seed uses `dispatcher@example.com` / `password123`.
+**Important:** Set production seed credentials via Fly secrets (`SEED_DISPATCHER_PASSWORD`, `SEED_DRIVER_PINS`) before running seed — no default passwords in source.
 
 ### 4. Deploy
 
@@ -111,7 +111,7 @@ SEED_ARCHIVE_RESEED=true npm run seed
 
 ### 5b. Restore delivery data after accidental wipe
 
-If delivery records were cleared, restore from the bundled archive CSV and re-sync intake:
+If delivery records were cleared, restore from a mounted archive CSV (`ARCHIVE_CSV_PATH` or `/app/backend/data/archive.csv`) and re-sync intake:
 
 ```bash
 fly ssh console --app iaw-saas -C 'sh -c "cd /app/backend && node dist/restoreDeliveryData.js"'
@@ -150,10 +150,7 @@ curl -sI https://iaw.mckenzian.com/ | head -5
 # Should return HTML (Vite index), not JSON
 ```
 
-Login:
-
-- **Driver:** `driver1` / `1111`
-- **Dispatcher tab:** `dispatcher@example.com` / `password123`
+Login uses credentials from Fly secrets / seed env — not documented in repo.
 
 ---
 
@@ -222,14 +219,14 @@ Until a native web form ships, new Google Form submissions can flow into the dis
 1. Open [Google Cloud Console](https://console.cloud.google.com/) and create or select a project.
 2. Enable the **Google Sheets API**.
 3. Create a **Service Account** and download its JSON key.
-4. Open the [live responses sheet](https://docs.google.com/spreadsheets/d/1olbOlF2Rody3B0PWBRC5Ukjmth_Vw-OgiVtJ4YpPqsg/edit) and **Share** it with the service account email (`...@....iam.gserviceaccount.com`) as **Viewer**.
+4. Open your Google Form responses sheet and **Share** it with the service account email (`...@....iam.gserviceaccount.com`) as **Viewer**.
 
 ### Fly secrets
 
 ```bash
 fly secrets set \
   INTAKE_GOOGLE_SHEETS_ENABLED=true \
-  GOOGLE_SHEETS_SPREADSHEET_ID=1olbOlF2Rody3B0PWBRC5Ukjmth_Vw-OgiVtJ4YpPqsg \
+  GOOGLE_SHEETS_SPREADSHEET_ID=your-spreadsheet-id \
   GOOGLE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}' \
   INTAKE_GOOGLE_SHEETS_INTERVAL_MS=60000 \
   --app iaw-saas
@@ -263,4 +260,4 @@ Dispatchers can also trigger a manual sync: `POST /api/admin/intake/sync` (requi
 6. Add `POST /api/intake/requests` calling the shared `intakeService.createDraftWaybillFromRequest()`
 7. Existing `external_source='google_sheet'` waybills remain in the database unchanged
 
-The static CSV at `docs/BACKUP of Requests - Archive.csv` stays available for one-time reseeds via `npm run reseed:archive`.
+Use `docs/archive.example.csv` for dev reseeds, or mount a real archive CSV at `ARCHIVE_CSV_PATH` / Fly volume path for production restore via `npm run reseed:archive`.

@@ -2,6 +2,7 @@ import request from 'supertest';
 import bcrypt from 'bcryptjs';
 import app from '../app';
 import { prisma } from '../config/db';
+import { loadTestCredentials } from '../seedConfig';
 
 describe('Payroll Employee API', () => {
   let dispatcherToken: string;
@@ -16,7 +17,8 @@ describe('Payroll Employee API', () => {
       where: { email: 'payroll-dispatcher@example.com' },
     });
 
-    const passwordHash = await bcrypt.hash('password123', 10);
+    const payrollTestPassword = 'payroll-test-password-local-only';
+    const passwordHash = await bcrypt.hash(payrollTestPassword, 10);
     await prisma.dispatcher.create({
       data: {
         email: 'payroll-dispatcher@example.com',
@@ -29,10 +31,11 @@ describe('Payroll Employee API', () => {
 
     const dispatcherRes = await request(app)
       .post('/api/auth/dispatcher/login')
-      .send({ email: 'payroll-dispatcher@example.com', password: 'password123' });
+      .send({ email: 'payroll-dispatcher@example.com', password: payrollTestPassword });
     dispatcherToken = dispatcherRes.body.token;
 
-    const driverRes = await request(app).post('/api/auth/driver/login').send({ pin: '1111' });
+    const testCreds = loadTestCredentials();
+    const driverRes = await request(app).post('/api/auth/driver/login').send({ pin: testCreds.driver1Pin });
     driverToken = driverRes.body.token;
   });
 
