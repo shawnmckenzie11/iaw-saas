@@ -17,6 +17,9 @@ frontend/.env.local
 # Operational archive (use docs/archive.example.csv in repo; mount real CSV locally)
 docs/BACKUP of Requests - Archive.csv
 
+# Seed-generated location data (committed baseline stays in suggestions.json)
+frontend/public/data/suggestions.generated.json
+
 # Build & test artifacts
 backend/dist/
 frontend/dist/

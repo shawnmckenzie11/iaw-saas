@@ -74,6 +74,7 @@ Seed credentials and E2E vars live in `backend/.env` (gitignored) — see `backe
 - **W-005**: Assigned to `drv-04`, status `PICKED_UP`
 - **HIST-001..100**: Last 100 rows from archive CSV (~70% DELIVERED, ~20% PICKED_UP, ~10% DRAFT)
 - **topPickups.json**: Regenerated at seed time — top 6 pickup locations from last 365 days of CSV
+- **suggestions.generated.json**: Regenerated at seed from archive CSV → `frontend/public/data/` (gitignored); 43 verified businesses + conditional dropoffs when archive has ≥50 rows
 
 ---
 
@@ -118,7 +119,7 @@ Runs backend Jest (`test:backend`) then Playwright Tier 1 (`test:e2e`).
 The legacy Expo `mobile/` prototype was removed; the React PWA is the sole client.
 
 ### Driver pickup / delivery
-- **Pickup wizard** (`PickupPage.tsx` + `LocationQuickSelect.tsx`): 3-step flow (Pickup → Dropoff → Sign stepper label); CSV-derived top-6 quick-select chips with **More...** / **Other** progressive disclosure; `selectedPickupKey` conditional dropoffs; auto-fill from `suggestions.json`; saves at step 2.
+- **Pickup wizard** (`PickupPage.tsx` + `LocationQuickSelect.tsx`): 3-step flow (Pickup → Dropoff → Sign stepper label); CSV-derived top-6 quick-select chips with **More...** / **Other** progressive disclosure; `selectedPickupKey` conditional dropoffs; auto-fill from archive-generated `public/data/suggestions.generated.json` (seed) with synthetic `suggestions.json` fallback; saves at step 2.
 - **Pending dropoff gating** (`pendingDropoff.ts`, `DashboardPage.tsx`, `SignOffPage.tsx`): PICKED_UP waybills with placeholder dropoff (`Pending Dropoff` / `Pending Address`) open pickup wizard step 2 before sign-off or quick delivery confirm.
 - **Pricing** (`pricing.ts`): Category-based rules in code + DB route rates; mirrored in backend + CSV location mapper.
 - **CSV seed pipeline** (`backend/src/utils/archiveCsvImporter.ts`, `csvLocationMapper.ts`): Adapted from `server.js` + `analyze_csv.py`; seeds HIST-* records and writes `frontend/src/data/topPickups.json`.
@@ -193,6 +194,18 @@ The legacy Expo `mobile/` prototype was removed; the React PWA is the sole clien
 
 ---
 
-## 8. Sensitive Data Redaction (2026-07-02)
+## 8. Verification Status (2026-07-02 — pickup suggestions + walkthrough)
+
+| Test Category | Status | Command |
+|---|---|---|
+| Backend unit/integration | **PASS** | `cd backend && npm run test` — 67/67 |
+| Frontend build | **PASS** | `npm run build --prefix frontend` |
+| Walkthrough E2E | **PASS** | `npm run test:e2e:walkthrough` — video at `test-results/e2e-walkthrough-*/video.webm` |
+
+**Shipped:** Archive-driven location suggestions at seed (no PII in git); Playwright walkthrough spec + env loading fixes.
+
+---
+
+## 9. Sensitive Data Redaction (2026-07-02)
 
 Operational credentials, real business archive CSV, pricing tables in docs, and hardcoded auth shortcuts were removed from the public repo. Seed/E2E credentials are env-only (`SEED_*` in `backend/.env`, `.env.test.example`). Synthetic fixtures: `docs/archive.example.csv`, `frontend/src/data/suggestions.json`. Real archive CSV is gitignored. Full exposure assessment: `docs/SAFETY_AUDIT.md`.

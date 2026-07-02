@@ -11,7 +11,7 @@
     "build": "npm run build:backend && npm run build:frontend",
     "test:backend": "npm run test --prefix backend",
     "test:e2e": "playwright test --grep-invert @walkthrough",
-    "test:e2e:walkthrough": "playwright test --grep @walkthrough --video=on",
+    "test:e2e:walkthrough": "playwright test --project=walkthrough",
     "test": "node scripts/test-all.mjs",
     "seed": "npx ts-node backend/src/seed.ts",
     "reseed:archive": "npx ts-node backend/src/runArchiveReseed.ts",

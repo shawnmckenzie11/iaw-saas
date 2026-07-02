@@ -8,6 +8,7 @@ import {
   resolveArchivePrice,
   type ParsedArchiveRow,
 } from './utils/archiveCsvImporter';
+import { generateSuggestionsArtifact } from './utils/suggestionsGenerator';
 
 const DRIVER_IDS = ['drv-01', 'drv-02', 'drv-03', 'drv-04'];
 
@@ -17,7 +18,7 @@ export interface ImportArchiveOptions {
   /** When true, deletes all delivery records and waybill events first. */
   clearExisting: boolean;
   csvPath?: string;
-  /** Regenerate frontend topPickups.json from full CSV. */
+  /** Regenerate frontend topPickups.json and suggestions.json from full CSV. */
   writeTopPickups?: boolean;
 }
 
@@ -142,6 +143,15 @@ export async function reseedFromArchive(
   if (options.writeTopPickups !== false && allRows.length > 0) {
     const stats = generateTopPickupsArtifact(options.csvPath);
     console.log(`[Archive] Top pickups (${stats.windowDays}d): ${stats.topPickups.join(', ')}`);
+
+    const suggestions = generateSuggestionsArtifact(options.csvPath);
+    if (suggestions) {
+      console.log(
+        `[Archive] Location suggestions: ${suggestions.commonPickups.length} pickups, ${Object.keys(suggestions.conditionalDropoffs).length} conditional routes`
+      );
+    } else {
+      console.log('[Archive] Skipping suggestions.json (archive too small — using committed synthetic baseline).');
+    }
   }
 
   if (options.clearExisting) {

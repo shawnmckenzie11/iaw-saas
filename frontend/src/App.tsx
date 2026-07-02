@@ -6,6 +6,7 @@ import SignOffPage from './pages/SignOffPage';
 import AccountingPage from './pages/AccountingPage';
 import PwaUpdateBanner from './components/PwaUpdateBanner';
 import { APP_BUILD, ensureFreshAppBuildCache } from './config/appBuild';
+import { hydrateLocationSuggestions } from './data/locationSuggestions';
 import {
   authenticateUser,
   clearSession,
@@ -25,6 +26,7 @@ type Screen = 'dashboard' | 'pickup' | 'signoff' | 'accounting';
 export default function App() {
   const [session, setSession] = useState<AuthSession | null>(loadSession);
   const [sessionReady, setSessionReady] = useState(!!loadSession());
+  const [locationReady, setLocationReady] = useState(false);
   const [screen, setScreen] = useState<Screen>('dashboard');
   const [signOffWaybill, setSignOffWaybill] = useState<Waybill | null>(null);
   const [editPickupWaybill, setEditPickupWaybill] = useState<Waybill | null>(null);
@@ -34,6 +36,10 @@ export default function App() {
 
   useEffect(() => {
     void ensureFreshAppBuildCache();
+  }, []);
+
+  useEffect(() => {
+    void hydrateLocationSuggestions().finally(() => setLocationReady(true));
   }, []);
 
   useEffect(() => {
@@ -113,7 +119,7 @@ export default function App() {
     syncManager.setNetworkConnected(next);
   };
 
-  if (!sessionReady) {
+  if (!sessionReady || !locationReady) {
     return null;
   }
 

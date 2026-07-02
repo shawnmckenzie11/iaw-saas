@@ -88,8 +88,9 @@ export async function loginDriverViaUi(
 ): Promise<void> {
   await page.goto('/');
   await page.getByRole('button', { name: 'Driver (PIN)' }).click();
-  await page.getByLabel('Username').fill(username);
-  await page.getByLabel('4-Digit PIN').fill(pin);
+  const inputs = page.locator('.login-card input');
+  await inputs.nth(0).fill(username);
+  await inputs.nth(1).fill(pin);
   await page.getByText('SIGN IN').click();
 }
 
@@ -99,7 +100,8 @@ export async function loginDriverViaUi(
 export async function loginDispatcherViaUi(page: Page): Promise<void> {
   await page.goto('/');
   await page.getByRole('button', { name: 'Dispatcher' }).click();
-  await page.getByLabel('Email').fill(e2eCredentials.dispatcherEmail);
-  await page.getByLabel('Password').fill(e2eCredentials.dispatcherPassword);
+  const inputs = page.locator('.login-card input');
+  await inputs.nth(0).fill(e2eCredentials.dispatcherEmail);
+  await inputs.nth(1).fill(e2eCredentials.dispatcherPassword);
   await page.getByText('SIGN IN').click();
 }

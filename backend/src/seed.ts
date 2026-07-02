@@ -1,9 +1,15 @@
 import { prisma } from './config/db';
 import bcrypt from 'bcryptjs';
 import { hashPin } from './utils/pinHash';
-import { archiveYearStart } from './utils/archiveCsvImporter';
+import {
+  archiveYearStart,
+  generateTopPickupsArtifact,
+  readArchiveCsv,
+  resolveArchiveCsvPath,
+} from './utils/archiveCsvImporter';
 import { reseedFromArchive } from './reseedFromArchive';
 import { loadSeedConfig } from './seedConfig';
+import { generateSuggestionsArtifact } from './utils/suggestionsGenerator';
 
 /**
  * Seeds drivers, dispatchers, route rates, and optional YTD archive completed deliveries.
@@ -115,11 +121,26 @@ async function main() {
     });
   }
 
+  const archiveCsvPath = resolveArchiveCsvPath();
+  const archiveRows = readArchiveCsv(archiveCsvPath);
+  if (archiveRows.length > 0) {
+    const stats = generateTopPickupsArtifact(archiveCsvPath);
+    console.log(`[Seed] Top pickups (${stats.windowDays}d): ${stats.topPickups.join(', ')}`);
+
+    const suggestions = generateSuggestionsArtifact(archiveCsvPath);
+    if (suggestions) {
+      console.log(
+        `[Seed] Location suggestions: ${suggestions.commonPickups.length} pickups, ${Object.keys(suggestions.conditionalDropoffs).length} conditional routes`
+      );
+    }
+  }
+
   if (process.env.SEED_ARCHIVE_RESEED === 'true') {
     await reseedFromArchive(prisma, {
       since: archiveYearStart(2026),
       clearExisting: true,
-      writeTopPickups: true,
+      writeTopPickups: false,
+      csvPath: archiveCsvPath,
     });
   } else {
     console.log('[Seed] Skipping archive reseed (set SEED_ARCHIVE_RESEED=true to enable).');

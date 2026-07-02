@@ -20,10 +20,11 @@ npm run test:e2e:walkthrough
 Videos are written to:
 
 ```
-test-results/
-  walkthrough-chromium/
-    video.webm
+test-results/e2e-walkthrough-PWA-walkth-*-walkthrough/
+  video.webm
 ```
+
+(Exact folder name includes a hash suffix; search `test-results/` for `video.webm`.)
 
 ## What the spec covers
 
