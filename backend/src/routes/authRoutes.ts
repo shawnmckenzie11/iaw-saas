@@ -101,7 +101,16 @@ const handleDriverLogin = async (req: Request, res: Response) => {
     driverId: driver.id,
   });
 
-  res.json({ token });
+  const names = await loadActiveDriverNames();
+  const profile = names.find((row) => row.id === driver.id);
+  const idToUsername = assignUniqueDriverLoginUsernames(names);
+
+  res.json({
+    token,
+    firstName: profile?.firstName,
+    lastName: profile?.lastName,
+    loginUsername: idToUsername.get(driver.id),
+  });
 };
 
 /**
@@ -115,12 +124,14 @@ const handleDispatcherLogin = async (req: Request, res: Response) => {
     return;
   }
 
-  if (!EMAIL_REGEX.test(email)) {
+  const normalizedEmail = String(email).trim().toLowerCase();
+
+  if (!EMAIL_REGEX.test(normalizedEmail)) {
     res.status(400).json({ error: 'Invalid email format' });
     return;
   }
 
-  const dispatcher = await prisma.dispatcher.findUnique({ where: { email } });
+  const dispatcher = await prisma.dispatcher.findUnique({ where: { email: normalizedEmail } });
   if (!dispatcher || !dispatcher.isActive) {
     res.status(401).json({ error: 'Invalid credentials' });
     return;

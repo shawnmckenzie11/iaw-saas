@@ -1,7 +1,9 @@
 import {
   driverDisplayNameForId,
+  fetchDriverLogins,
   resolveDriverIdFromLogin,
 } from './driverLogins';
+import { driverDisplayName } from '../utils/driverLoginUsername';
 
 export type UserRole = 'DRIVER' | 'DISPATCHER';
 
@@ -69,7 +71,12 @@ async function loginDriver(username: string, pin: string): Promise<AuthSession |
   });
   if (!res.ok) return null;
 
-  const { token } = (await res.json()) as { token: string };
+  const body = (await res.json()) as {
+    token: string;
+    firstName?: string;
+    lastName?: string;
+  };
+  const { token, firstName, lastName } = body;
   const claims = decodeJwtPayload(token);
 
   if (expectedDriverId && claims.driverId && claims.driverId !== expectedDriverId) {
@@ -77,13 +84,17 @@ async function loginDriver(username: string, pin: string): Promise<AuthSession |
   }
 
   const driverId = claims.driverId ?? expectedDriverId;
+  const displayName =
+    firstName && lastName
+      ? driverDisplayName(firstName, lastName)
+      : driverDisplayNameForId(driverId);
 
   return {
     token,
     role: 'DRIVER',
     driverId,
     username: normalized || `driver-${driverId ?? 'unknown'}`,
-    displayName: driverDisplayNameForId(driverId),
+    displayName,
   };
 }
 
@@ -119,6 +130,7 @@ export async function authenticateUser(
     return null;
   }
 
+  await fetchDriverLogins();
   return loginDriver(userLower, passcodeOrPassword);
 }
 

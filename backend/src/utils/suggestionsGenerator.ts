@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { mapToVerified, VERIFIED_BUSINESSES } from './csvLocationMapper';
 import { LOCATION_ADDRESSES, LOCATION_COORDS } from './locationGeoLookup';
-import { ParsedArchiveRow, readArchiveCsv } from './archiveCsvImporter';
+import { computeTopPickups, ParsedArchiveRow, readArchiveCsv } from './archiveCsvImporter';
 
 /** Minimum archive rows required before overwriting committed synthetic fixtures. */
 export const SUGGESTIONS_ARCHIVE_MIN_ROWS = 50;
@@ -17,6 +17,8 @@ export interface LocationSuggestionsArtifact {
   commonPickups: string[];
   conditionalDropoffs: Record<string, string[]>;
   locations: Record<string, LocationDetail>;
+  /** Archive-ranked pickup shortcuts for quick-select chips (matches verified business names). */
+  topPickups: string[];
 }
 
 const DEFAULT_SUGGESTIONS_PATH = path.join(
@@ -103,6 +105,7 @@ export function computeLocationAddresses(rows: ParsedArchiveRow[]): Map<string, 
 export function buildSuggestionsArtifact(rows: ParsedArchiveRow[]): LocationSuggestionsArtifact {
   const commonPickups = buildCommonPickups();
   const conditionalDropoffs = computeConditionalDropoffs(rows);
+  const topPickups = computeTopPickups(rows);
   const addresses = computeLocationAddresses(rows);
   const locations: Record<string, LocationDetail> = {};
 
@@ -140,7 +143,7 @@ export function buildSuggestionsArtifact(rows: ParsedArchiveRow[]): LocationSugg
     };
   }
 
-  return { commonPickups, conditionalDropoffs, locations };
+  return { commonPickups, conditionalDropoffs, locations, topPickups };
 }
 
 /**

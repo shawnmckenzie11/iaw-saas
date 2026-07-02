@@ -23,6 +23,18 @@ export function formatWaybillTime(isoString?: string | null): string {
 }
 
 /**
+ * Returns a human-readable weight label from stored parcel weight class values.
+ */
+export function formatWeightClass(weightClass?: string | null): string {
+  if (!weightClass?.trim()) return '—';
+  const trimmed = weightClass.trim();
+  if (/^Weight:\s*Under\s*75/i.test(trimmed)) return 'Under 75 lbs';
+  const numericMatch = trimmed.match(/^Weight:\s*(\d+)\s*lbs?$/i);
+  if (numericMatch) return `${numericMatch[1]} lbs`;
+  return trimmed.replace(/^Weight:\s*/i, '');
+}
+
+/**
  * Returns a compact cargo label for narrow dashboard table columns.
  */
 export function abbreviateCargo(description: string): string {

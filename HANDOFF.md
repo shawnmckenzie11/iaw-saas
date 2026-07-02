@@ -222,8 +222,9 @@ The legacy Expo `mobile/` prototype was removed; the React PWA is the sole clien
 - `Redpath (North)` — distinct from ODP and Falconbridge; archive aliases (`Repath-North`, etc.) map via `csvLocationMapper`
 
 ### Dropoff quick select
-- Max 10 chips, registered businesses only; **More** hidden on dropoff (`hideMore` on `LocationQuickSelect`).
+- Max 10 chips, registered businesses only; **More...** reveals full registered list; **Other** remains last.
 - `computeConditionalDropoffs` maps archive rows through `mapToVerified` before ranking.
+- Pickup chips use archive `topPickups` hydrated from `suggestions.generated.json` (not bundled synthetic `topPickups.json` alone).
 
 ### Verification
 | Test Category | Status | Command |
@@ -232,6 +233,50 @@ The legacy Expo `mobile/` prototype was removed; the React PWA is the sole clien
 | Frontend build | **PASS** | `npm run build --prefix frontend` |
 
 Re-run `cd backend && npx ts-node src/seed.ts` against archive CSV to regenerate `suggestions.generated.json` with filtered dropoffs.
+
+---
+
+## 11. Payroll Driver Names + Dispatcher Pickup Flow (2026-07-02 — local, uncommitted)
+
+### Payroll-linked driver login usernames
+- `GET /api/auth/driver-logins` returns payroll employee first/last names + derived `loginUsername` (`firstname.lastinitial`).
+- Driver login response includes `firstName`, `lastName`, `loginUsername` for portal header display.
+- `seed.ts` preserves existing `Employee` names on re-seed; driver rows sync from payroll when linked.
+- Login page lists payroll drivers (tap to fill username); dashboard header refreshes from payroll on mount and after accounting saves.
+- `AccountingPage` calls `notifyDriverLoginsChanged()` after employee save/delete.
+
+### Dispatcher create pickup (sequential steps restored)
+- Step 1: pickup location only → **Confirm Pickup Details ➡**
+- Step 2: dropoff + **Queue for Pickup** / **Picked Up**
+
+### Verification
+| Test Category | Status | Command |
+|---|---|---|
+| Auth integration tests | **PASS** | `cd backend && npm test -- --testPathPattern=auth` — 29/29 |
+| Frontend build | **PASS** | `npm run build --prefix frontend` |
+
+**Pending:** commit + push local changes; optional `fly deploy` + re-seed in production.
+
+---
+
+## 12. Location Quick Select Fix (2026-07-02)
+
+### Root cause
+- Pickup chips fell back to alphabetical first 10 because bundled `topPickups.json` (synthetic Acme/Beta/Gamma) did not overlap with runtime-hydrated `commonPickups` from `suggestions.generated.json`.
+- Dropoff **More...** was disabled via `hideMore` on step 2 `LocationQuickSelect`.
+
+### Fix
+- `suggestions.generated.json` now includes archive-ranked `topPickups`; `hydrateLocationSuggestions()` updates module `TOP_PICKUPS`.
+- `computeTopPickups` maps raw CSV names through `mapToVerified` before counting.
+- Dropoff step restores `showAllDropoffs` state and **More...** button (ranked + alphabetical top-up unchanged in `quickDropoffOptions`).
+
+### Verification
+| Test Category | Status | Command |
+|---|---|---|
+| Backend unit/integration | **PASS** | `cd backend && npm run test` — 81/81 |
+| Frontend build | **PASS** | `npm run build --prefix frontend` |
+
+Re-run `cd backend && npx ts-node src/seed.ts` (or `generateSuggestionsArtifact`) to refresh `suggestions.generated.json` with `topPickups` on deploy.
 
 ---
 

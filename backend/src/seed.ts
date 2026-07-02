@@ -15,22 +15,28 @@ import { generateSuggestionsArtifact } from './utils/suggestionsGenerator';
  * Seeds drivers, dispatchers, route rates, and optional YTD archive completed deliveries.
  */
 async function main() {
-  const { dispatcherEmail, dispatcherPassword, drivers } = loadSeedConfig();
+  const { dispatcherEmail, dispatcherPassword, additionalDispatchers, drivers } = loadSeedConfig();
   console.log('[Seed] Seeding default testing accounts...');
 
   for (const driver of drivers) {
+    const existingEmployee = await prisma.employee.findFirst({
+      where: { driverId: driver.id },
+    });
+    const firstName = existingEmployee?.firstName ?? driver.firstName;
+    const lastName = existingEmployee?.lastName ?? driver.lastName;
+
     const record = await prisma.driver.upsert({
       where: { id: driver.id },
       update: {
-        firstName: driver.firstName,
-        lastName: driver.lastName,
+        firstName,
+        lastName,
         pinHash: hashPin(driver.pin),
         isActive: true,
       },
       create: {
         id: driver.id,
-        firstName: driver.firstName,
-        lastName: driver.lastName,
+        firstName,
+        lastName,
         pinHash: hashPin(driver.pin),
         isActive: true,
       },
@@ -47,7 +53,6 @@ async function main() {
 
   const activeDrivers = await prisma.driver.findMany({ where: { isActive: true } });
   for (const driver of activeDrivers) {
-    const email = `${driver.firstName.toLowerCase()}.${driver.lastName.toLowerCase().replace(/\s+/g, '')}@example.com`;
     const payRate = defaultPayRates[driver.id] ?? 20.0;
     const existing = await prisma.employee.findFirst({
       where: { driverId: driver.id },
@@ -56,15 +61,13 @@ async function main() {
       await prisma.employee.update({
         where: { id: existing.id },
         data: {
-          firstName: driver.firstName,
-          lastName: driver.lastName,
-          email: existing.email ?? email,
           role: 'DRIVER',
           isActive: true,
           payRate,
         },
       });
     } else {
+      const email = `${driver.firstName.toLowerCase()}.${driver.lastName.toLowerCase().replace(/\s+/g, '')}@example.com`;
       await prisma.employee.create({
         data: {
           firstName: driver.firstName,
@@ -98,6 +101,27 @@ async function main() {
     },
   });
   console.log(`[Seed] Dispatcher upserted: ${dispatcher.email} (${dispatcher.id})`);
+
+  for (const extra of additionalDispatchers) {
+    const extraHash = await bcrypt.hash(extra.password, 10);
+    const extraDispatcher = await prisma.dispatcher.upsert({
+      where: { email: extra.email },
+      update: {
+        passwordHash: extraHash,
+        firstName: extra.firstName,
+        lastName: extra.lastName,
+        isActive: true,
+      },
+      create: {
+        email: extra.email,
+        passwordHash: extraHash,
+        firstName: extra.firstName,
+        lastName: extra.lastName,
+        isActive: true,
+      },
+    });
+    console.log(`[Seed] Dispatcher upserted: ${extraDispatcher.email} (${extraDispatcher.id})`);
+  }
 
   const routeRates = [
     { id: '00000000-0000-0000-0000-000000000001', origin: 'Sudbury', destination: 'Lively', flatRate: 60.0 },

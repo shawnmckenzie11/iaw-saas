@@ -11,10 +11,19 @@ export interface SeedDriverDef {
   pin: string;
 }
 
+/** Additional dispatcher account seeded from `SEED_DISPATCHER_N_*` env vars. */
+export interface SeedDispatcherDef {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+}
+
 /** Resolved seed credentials sourced from environment variables. */
 export interface SeedConfig {
   dispatcherEmail: string;
   dispatcherPassword: string;
+  additionalDispatchers: SeedDispatcherDef[];
   drivers: SeedDriverDef[];
 }
 
@@ -54,12 +63,34 @@ export function parseDriverPins(): string[] {
 }
 
 /**
+ * Loads optional extra dispatcher accounts from `SEED_DISPATCHER_2_EMAIL` … `SEED_DISPATCHER_5_*`.
+ */
+export function loadAdditionalDispatchers(): SeedDispatcherDef[] {
+  const dispatchers: SeedDispatcherDef[] = [];
+
+  for (let index = 2; index <= 5; index += 1) {
+    const email = process.env[`SEED_DISPATCHER_${index}_EMAIL`]?.trim().toLowerCase();
+    const password = process.env[`SEED_DISPATCHER_${index}_PASSWORD`]?.trim();
+    if (!email || !password) continue;
+
+    dispatchers.push({
+      email,
+      password,
+      firstName: process.env[`SEED_DISPATCHER_${index}_FIRST_NAME`]?.trim() || 'Dispatcher',
+      lastName: process.env[`SEED_DISPATCHER_${index}_LAST_NAME`]?.trim() || String(index),
+    });
+  }
+
+  return dispatchers;
+}
+
+/**
  * Loads seed credentials from environment variables.
  * @param options.requirePassword When true, throws if `SEED_DISPATCHER_PASSWORD` is unset.
  */
 export function loadSeedConfig(options: { requirePassword?: boolean } = {}): SeedConfig {
   const requirePassword = options.requirePassword ?? true;
-  const dispatcherEmail = process.env.SEED_DISPATCHER_EMAIL?.trim() || 'dispatcher@example.com';
+  const dispatcherEmail = process.env.SEED_DISPATCHER_EMAIL?.trim().toLowerCase() || 'dispatcher@example.com';
   const dispatcherPassword = process.env.SEED_DISPATCHER_PASSWORD?.trim() ?? '';
 
   if (requirePassword && !dispatcherPassword) {
@@ -75,7 +106,7 @@ export function loadSeedConfig(options: { requirePassword?: boolean } = {}): See
     pin: pins[index],
   }));
 
-  return { dispatcherEmail, dispatcherPassword, drivers };
+  return { dispatcherEmail, dispatcherPassword, additionalDispatchers: loadAdditionalDispatchers(), drivers };
 }
 
 /**

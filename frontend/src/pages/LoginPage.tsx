@@ -1,4 +1,10 @@
-import { useState, FormEvent } from 'react';
+import { useState, FormEvent, useEffect } from 'react';
+import {
+  DRIVER_LOGINS_CHANGED_EVENT,
+  fetchDriverLogins,
+  type DriverLoginEntry,
+} from '../services/driverLogins';
+import { driverDisplayName } from '../utils/driverLoginUsername';
 
 type LoginMode = 'driver' | 'dispatcher';
 
@@ -17,6 +23,22 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [driverLogins, setDriverLogins] = useState<DriverLoginEntry[]>([]);
+
+  /**
+   * Loads payroll-linked driver login usernames for the driver tab.
+   */
+  useEffect(() => {
+    if (mode !== 'driver') return;
+
+    const refresh = () => {
+      void fetchDriverLogins().then(setDriverLogins);
+    };
+
+    refresh();
+    window.addEventListener(DRIVER_LOGINS_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(DRIVER_LOGINS_CHANGED_EVENT, refresh);
+  }, [mode]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -67,13 +89,39 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
         {mode === 'driver' ? (
           <>
+            {driverLogins.length > 0 && (
+              <div className="login-driver-hints">
+                <div className="login-driver-hints-label">Payroll drivers</div>
+                <ul className="login-driver-hints-list">
+                  {driverLogins.map((entry) => (
+                    <li key={entry.id}>
+                      <button
+                        type="button"
+                        className="login-driver-hint-btn"
+                        onClick={() => setUsername(entry.loginUsername)}
+                      >
+                        <span className="login-driver-hint-name">
+                          {driverDisplayName(entry.firstName, entry.lastName)}
+                        </span>
+                        <span className="login-driver-hint-user">{entry.loginUsername}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             <label>Username</label>
             <input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               autoCapitalize="none"
               autoCorrect="off"
-              placeholder="e.g. driver.o"
+              placeholder={
+                driverLogins[0]?.loginUsername
+                  ? `e.g. ${driverLogins[0].loginUsername}`
+                  : 'firstname.lastinitial'
+              }
             />
             <label>4-Digit PIN</label>
             <input

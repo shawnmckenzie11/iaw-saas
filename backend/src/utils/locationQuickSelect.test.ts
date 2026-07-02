@@ -49,7 +49,16 @@ describe('location quick select helpers', () => {
     ]);
   });
 
-  it('allRegisteredDropoffs excludes the active pickup location', () => {
-    expect(allRegisteredDropoffs(['Alpha', 'Bravo'], 'Alpha')).toEqual(['Bravo']);
+  it('quickPickupOptions falls back to alphabetical when topPickups do not overlap', () => {
+    const topPickups = ['Synthetic Only'];
+    const quick = quickPickupOptions(topPickups, commonPickups, false, 3);
+    expect(quick).toEqual(['Alpha', 'Bravo', 'Charlie']);
+  });
+
+  it('quickPickupOptions uses archive frequency when topPickups match registered businesses', () => {
+    const registered = ['Airport', 'Wajax', 'Toromont', 'Komatsu (260)'];
+    const topPickups = ['Wajax', 'Komatsu (260)', 'Toromont'];
+    const quick = quickPickupOptions(topPickups, registered, false);
+    expect(quick).toEqual(['Wajax', 'Komatsu (260)', 'Toromont']);
   });
 });

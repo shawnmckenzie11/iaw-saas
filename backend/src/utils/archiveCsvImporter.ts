@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { DeliveryStatus } from '@prisma/client';
-import { VERIFIED_BUSINESSES } from './csvLocationMapper';
+import { mapToVerified, VERIFIED_BUSINESSES } from './csvLocationMapper';
 import {
   parseCsvLine,
   parseRequestFields,
@@ -75,6 +75,7 @@ export function readArchiveCsv(csvPath?: string): ParsedArchiveRow[] {
 export function computeTopPickups(rows: ParsedArchiveRow[], windowDays = 365, limit = 10): string[] {
   if (rows.length === 0) return VERIFIED_BUSINESSES.slice(0, limit);
 
+  const verifiedSet = new Set<string>(VERIFIED_BUSINESSES);
   const newest = rows[0]?.timestamp ?? new Date();
   const cutoff = new Date(newest);
   cutoff.setDate(cutoff.getDate() - windowDays);
@@ -82,7 +83,9 @@ export function computeTopPickups(rows: ParsedArchiveRow[], windowDays = 365, li
   const counts = new Map<string, number>();
   for (const row of rows) {
     if (row.timestamp < cutoff) continue;
-    counts.set(row.pickupLocationName, (counts.get(row.pickupLocationName) ?? 0) + 1);
+    const pickup = mapToVerified(row.pickupLocationName);
+    if (!pickup || !verifiedSet.has(pickup)) continue;
+    counts.set(pickup, (counts.get(pickup) ?? 0) + 1);
   }
 
   const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name);

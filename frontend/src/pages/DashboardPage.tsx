@@ -8,6 +8,11 @@ import {
   getDriverRoster,
   type DriverRosterEntry,
 } from '../services/driverRoster';
+import {
+  DRIVER_LOGINS_CHANGED_EVENT,
+  driverDisplayNameForId,
+  fetchDriverLogins,
+} from '../services/driverLogins';
 import type { AuthSession } from '../services/auth';
 import { syncManager, type SyncStats } from '../services/SyncManager';
 import type { Waybill } from '../types/waybill';
@@ -164,6 +169,7 @@ export default function DashboardPage({
     new Set(['today', 'unassigned'])
   );
   const [deleteConfirmWaybill, setDeleteConfirmWaybill] = useState<Waybill | null>(null);
+  const [driverHeaderName, setDriverHeaderName] = useState(session.displayName);
   const isDispatcher = session.role === 'DISPATCHER';
   const isDriverPreview = isDispatcher && driverPreviewId !== null;
   const showDriverPortal = !isDispatcher || isDriverPreview;
@@ -190,6 +196,24 @@ export default function DashboardPage({
     window.addEventListener(DRIVER_ROSTER_CHANGED_EVENT, onRosterChanged);
     return () => window.removeEventListener(DRIVER_ROSTER_CHANGED_EVENT, onRosterChanged);
   }, [isDispatcher, session.token]);
+
+  /**
+   * Refreshes the driver portal header from payroll-linked login names.
+   */
+  useEffect(() => {
+    if (isDispatcher || isDriverPreview) return;
+
+    const refreshDriverHeaderName = () => {
+      void fetchDriverLogins().then(() => {
+        const name = driverDisplayNameForId(session.driverId);
+        if (name) setDriverHeaderName(name);
+      });
+    };
+
+    refreshDriverHeaderName();
+    window.addEventListener(DRIVER_LOGINS_CHANGED_EVENT, refreshDriverHeaderName);
+    return () => window.removeEventListener(DRIVER_LOGINS_CHANGED_EVENT, refreshDriverHeaderName);
+  }, [session.driverId, isDispatcher, isDriverPreview]);
 
   useEffect(() => {
     syncManager.refresh();
@@ -953,8 +977,8 @@ export default function DashboardPage({
           ) : (
             <span className="driver-title">
               Driver Portal
-              {session.displayName ? (
-                <span className="driver-header-name"> — {session.displayName}</span>
+              {driverHeaderName ? (
+                <span className="driver-header-name"> — {driverHeaderName}</span>
               ) : null}{' '}
               <span className="build-stamp">{APP_BUILD}</span>
             </span>

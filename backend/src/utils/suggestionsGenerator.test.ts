@@ -99,6 +99,7 @@ describe('suggestionsGenerator', () => {
     const artifact = buildSuggestionsArtifact(rows);
     expect(artifact.commonPickups.length).toBeGreaterThan(40);
     expect(artifact.conditionalDropoffs['Wajax']?.length).toBeGreaterThan(0);
+    expect(artifact.topPickups.length).toBeGreaterThan(0);
     expect(artifact.locations['Wajax']?.address).toBe('Wajax address');
     expect(artifact.locations['Wajax']?.lat).toBeDefined();
   });

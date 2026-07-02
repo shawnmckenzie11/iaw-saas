@@ -27,18 +27,18 @@ describe('computeTopPickups', () => {
   it('returns the top 10 pickups by frequency in trailing window', () => {
     const rows: ParsedArchiveRow[] = [];
     const pickups = [
-      'Alpha',
-      'Bravo',
-      'Charlie',
-      'Delta',
-      'Echo',
-      'Foxtrot',
-      'Golf',
-      'Hotel',
-      'India',
-      'Juliet',
-      'Kilo',
-      'Lima',
+      'Wajax',
+      'Toromont',
+      'Komatsu (260)',
+      'Komatsu (145 McGill)',
+      'Epiroc Lively',
+      'Sandvik Mining',
+      'MacLean Engineering',
+      'Strongco',
+      'Nedco',
+      'Anmar',
+      'Consbec',
+      'Dunrite',
     ];
 
     pickups.forEach((name, index) => {
@@ -50,8 +50,20 @@ describe('computeTopPickups', () => {
 
     const top = computeTopPickups(rows);
     expect(top).toHaveLength(10);
-    expect(top[0]).toBe('Alpha');
-    expect(top[9]).toBe('Juliet');
-    expect(top).not.toContain('Kilo');
+    expect(top[0]).toBe('Wajax');
+    expect(top[9]).toBe('Anmar');
+    expect(top).not.toContain('Consbec');
+  });
+
+  it('maps archive pickup aliases to verified business names', () => {
+    const rows = [
+      pickupRow('KOMATSU 260', 0),
+      pickupRow('KOMATSU 260', 1),
+      pickupRow('Wajax', 2),
+    ];
+
+    const top = computeTopPickups(rows);
+    expect(top[0]).toBe('Komatsu (260)');
+    expect(top[1]).toBe('Wajax');
   });
 });

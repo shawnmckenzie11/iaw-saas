@@ -87,6 +87,19 @@ fly secrets set \
 
 **Important:** Set production seed credentials via Fly secrets (`SEED_DISPATCHER_PASSWORD`, `SEED_DRIVER_PINS`) before running seed — no default passwords in source.
 
+Optional extra dispatchers (index 2–5):
+
+```bash
+fly secrets set \
+  SEED_DISPATCHER_2_EMAIL=cynthiawinn@hotmail.com \
+  SEED_DISPATCHER_2_PASSWORD='your-password' \
+  SEED_DISPATCHER_2_FIRST_NAME=Cynthia \
+  SEED_DISPATCHER_2_LAST_NAME=Winn \
+  --app iaw-saas
+```
+
+Re-run `node dist/seed.js` in the container after adding secrets so new dispatcher rows are upserted.
+
 ### 4. Deploy
 
 ```bash
