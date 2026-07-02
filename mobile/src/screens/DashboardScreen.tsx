@@ -66,6 +66,9 @@ export default function DashboardScreen({
   const [adminTab, setAdminTab] = useState<'ACTIVE' | 'PENDING_PRICE' | 'COMPLETED'>('ACTIVE');
   const [selectedPendingPriceRecord, setSelectedPendingPriceRecord] = useState<DeliveryRecord | null>(null);
   const [quotePrice, setQuotePrice] = useState('');
+  const [completedSearchQuery, setCompletedSearchQuery] = useState('');
+  const [completedStartDate, setCompletedStartDate] = useState('');
+  const [completedEndDate, setCompletedEndDate] = useState('');
 
   const handleConfirmQuotePrice = async () => {
     if (!selectedPendingPriceRecord || !quotePrice.trim()) return;
@@ -178,7 +181,34 @@ export default function DashboardScreen({
       } else if (adminTab === 'PENDING_PRICE') {
         return records.filter(r => r.status === 'DELIVERED' && (!r.calculatedPrice || r.calculatedPrice === 0));
       } else {
-        return records.filter(r => r.status === 'DELIVERED' && r.calculatedPrice && r.calculatedPrice > 0);
+        let list = records.filter(r => r.status === 'DELIVERED' && r.calculatedPrice && r.calculatedPrice > 0);
+        
+        if (completedSearchQuery.trim()) {
+          const q = completedSearchQuery.toLowerCase().trim();
+          list = list.filter(r => 
+            (r.waybillNumber && r.waybillNumber.toLowerCase().includes(q)) ||
+            (r.pickupLocationName && r.pickupLocationName.toLowerCase().includes(q)) ||
+            (r.dropoffDestinationName && r.dropoffDestinationName.toLowerCase().includes(q))
+          );
+        }
+
+        if (completedStartDate.trim()) {
+          const start = new Date(completedStartDate.trim()).getTime();
+          if (!isNaN(start)) {
+            list = list.filter(r => r.createdAt && new Date(r.createdAt).getTime() >= start);
+          }
+        }
+
+        if (completedEndDate.trim()) {
+          const end = new Date(completedEndDate.trim());
+          end.setHours(23, 59, 59, 999);
+          const endTime = end.getTime();
+          if (!isNaN(endTime)) {
+            list = list.filter(r => r.createdAt && new Date(r.createdAt).getTime() <= endTime);
+          }
+        }
+
+        return list;
       }
     } else {
       if (adminTab === 'ACTIVE') {
@@ -494,6 +524,55 @@ export default function DashboardScreen({
         <ActivityIndicator size="large" color="#007AFF" style={{ marginTop: 40 }} />
       ) : (
         <View style={styles.listContainer}>
+          {/* COMPLETED TAB SEARCH FILTERS */}
+          {isAdminMode && adminTab === 'COMPLETED' && (
+            <View style={styles.searchFilterContainer}>
+              <View style={styles.searchRow}>
+                <TextInput
+                  style={styles.searchInput}
+                  value={completedSearchQuery}
+                  onChangeText={setCompletedSearchQuery}
+                  placeholder="🔍 Search waybill or business name..."
+                  placeholderTextColor="#8E8E93"
+                />
+              </View>
+              <View style={styles.dateFilterRow}>
+                <View style={styles.dateInputContainer}>
+                  <Text style={styles.dateLabel}>From:</Text>
+                  <TextInput
+                    style={styles.dateInput}
+                    value={completedStartDate}
+                    onChangeText={setCompletedStartDate}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor="#8E8E93"
+                  />
+                </View>
+                <View style={styles.dateInputContainer}>
+                  <Text style={styles.dateLabel}>To:</Text>
+                  <TextInput
+                    style={styles.dateInput}
+                    value={completedEndDate}
+                    onChangeText={setCompletedEndDate}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor="#8E8E93"
+                  />
+                </View>
+                {(completedSearchQuery.trim() !== '' || completedStartDate.trim() !== '' || completedEndDate.trim() !== '') && (
+                  <TouchableOpacity
+                    style={styles.clearFiltersBtn}
+                    onPress={() => {
+                      setCompletedSearchQuery('');
+                      setCompletedStartDate('');
+                      setCompletedEndDate('');
+                    }}
+                  >
+                    <Text style={styles.clearFiltersText}>Clear</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          )}
+
           {/* TABLE HEADER */}
           <View style={styles.tableHeader}>
             <Text style={[styles.tableHeaderCell, { flex: 1 }]}>Waybill</Text>
@@ -580,6 +659,66 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8F9FA',
     paddingHorizontal: 16,
     paddingTop: 10,
+  },
+  searchFilterContainer: {
+    backgroundColor: '#FFF',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E9ECEF',
+  },
+  searchRow: {
+    marginBottom: 8,
+  },
+  searchInput: {
+    backgroundColor: '#F1F3F5',
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: '#212529',
+  },
+  dateFilterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dateInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 10,
+  },
+  dateLabel: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#868E96',
+    marginRight: 6,
+    textTransform: 'uppercase',
+  },
+  dateInput: {
+    backgroundColor: '#F1F3F5',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    fontSize: 13,
+    color: '#212529',
+    flex: 1,
+    textAlign: 'center',
+  },
+  clearFiltersBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#E03131',
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  clearFiltersText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
   header: {
     flexDirection: 'row',

@@ -1,0 +1,291 @@
+:root {
+  --bg: #f8f9fa;
+  --card: #ffffff;
+  --border: #e9ecef;
+  --primary: #007aff;
+  --text: #212529;
+  --muted: #6c757d;
+  --danger: #ff3b30;
+  --success: #34c759;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.login-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.login-logo {
+  font-size: 48px;
+  text-align: center;
+}
+
+.login-card h1 {
+  margin: 0;
+  text-align: center;
+  font-size: 22px;
+}
+
+.login-subtitle {
+  text-align: center;
+  color: var(--muted);
+  margin: 0 0 16px;
+  font-size: 13px;
+}
+
+.login-error {
+  background: #ffe5e5;
+  color: var(--danger);
+  padding: 10px;
+  border-radius: 6px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: bold;
+}
+
+.login-card label {
+  font-size: 13px;
+  font-weight: bold;
+  color: #495057;
+}
+
+.login-card input {
+  padding: 10px 12px;
+  border: 1px solid #ced4da;
+  border-radius: 8px;
+  font-size: 15px;
+  margin-bottom: 8px;
+  background: var(--bg);
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 14px;
+  font-size: 15px;
+  font-weight: bold;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+}
+
+.btn-accounting {
+  background: #5856d6;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 14px;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  flex: 1;
+}
+
+.dashboard {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dispatch-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.network-toggle {
+  background: none;
+  border: none;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sync-stats {
+  background: #e5e5ea;
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #8e8e93;
+  display: flex;
+  gap: 5px;
+}
+
+.sync-stats .pending {
+  color: #ff9500;
+}
+
+.pending-sync-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.synced-label {
+  font-size: 11px;
+  color: var(--success);
+  font-weight: 600;
+}
+
+.sign-out-btn {
+  background: #ffe5e5;
+  color: var(--danger);
+  border: 1px solid #ffc4c4;
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.action-row {
+  display: flex;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.action-row .btn-primary {
+  flex: 1;
+  font-size: 12px;
+}
+
+.waybill-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.waybill-row {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.route {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.waybill-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.btn-signoff {
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.status-badge {
+  font-size: 10px;
+  font-weight: bold;
+  color: var(--muted);
+}
+
+.form-page {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.form-page h2 {
+  margin: 8px 0 16px;
+}
+
+.form-page label {
+  display: block;
+  font-size: 13px;
+  font-weight: bold;
+  margin: 12px 0 4px;
+}
+
+.form-page input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ced4da;
+  border-radius: 8px;
+  font-size: 15px;
+}
+
+.back-btn {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.signature-canvas {
+  border: 1px solid #ced4da;
+  border-radius: 8px;
+  width: 100%;
+  touch-action: none;
+  margin: 12px 0;
+  background: #fff;
+}
+
+.form-page .btn-primary {
+  width: 100%;
+  margin-top: 16px;
+}

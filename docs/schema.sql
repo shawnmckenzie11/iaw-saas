@@ -58,10 +58,23 @@ CREATE TABLE customers (
 
 -- Drivers table
 CREATE TABLE drivers (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id VARCHAR(100) PRIMARY KEY,
     first_name VARCHAR(100) NOT NULL, -- PII
     last_name VARCHAR(100) NOT NULL, -- PII
     phone VARCHAR(50), -- PII
+    pin_hash VARCHAR(255),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Dispatchers table
+CREATE TABLE dispatchers (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    first_name VARCHAR(100) NOT NULL,
+    last_name VARCHAR(100) NOT NULL,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -94,7 +107,7 @@ CREATE TABLE delivery_records (
     qbo_customer_id VARCHAR(100), -- Denormalized for direct QBO mapping validation
 
     -- Driver/Vehicle Details
-    driver_id UUID REFERENCES drivers(id),
+    driver_id VARCHAR(100) REFERENCES drivers(id),
     vehicle_type vehicle_type NOT NULL DEFAULT 'CAR',
 
     -- Parcel / Cargo Details
@@ -175,3 +188,16 @@ CREATE INDEX idx_delivery_records_status ON delivery_records(status);
 CREATE INDEX idx_delivery_records_customer ON delivery_records(customer_id);
 CREATE INDEX idx_delivery_records_driver ON delivery_records(driver_id);
 CREATE INDEX idx_route_rates_lookup ON route_rates(origin, destination, effective_date DESC);
+
+-- Waybill Events table for Event Sourcing
+CREATE TABLE waybill_events (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    client_side_uuid UUID NOT NULL,
+    waybill_number VARCHAR(50) NOT NULL,
+    event_type VARCHAR(100) NOT NULL,
+    data JSONB NOT NULL,
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_waybill_events_waybill ON waybill_events(waybill_number);
+CREATE INDEX idx_waybill_events_client_uuid ON waybill_events(client_side_uuid);
+

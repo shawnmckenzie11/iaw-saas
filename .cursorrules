@@ -1,0 +1,47 @@
+# McKenzian Solutions Architecture Standards
+
+This document serves as the master blueprint and instruction manual for all Cursor, Composer, and other external agents working on this codebase.
+
+---
+
+## 1. Core Tech Stack Standards
+
+- **Frontend Client:** React, Vite, and CSS. Native styling (Vanilla CSS with custom variables) is preferred. Built as a Progressive Web App (PWA).
+- **Backend API Server:** Node.js, Express, TypeScript (strict compile mode), and Prisma ORM.
+- **Primary Database:** PostgreSQL (typically hosted as isolated clusters on Fly.io).
+- **Client Cache Database:** Browser-level IndexedDB accessed via **Dexie.js**.
+
+---
+
+## 2. Synchronization & Data Integrity
+
+To prevent concurrent write conflicts from offline clients, the system enforces **Append-Only Event Sourcing**:
+
+1. **Write Action Model:** Clients do not modify records directly. Every change is saved locally as a discrete event (e.g., status changes, coordinate entries, photo attachments).
+2. **Dual Client-Side Sync Queues:**
+   - **Text Sync Queue (Immediate):** Holds lightweight updates (status string changes, metadata, timestamps). Attempts synchronization immediately upon detecting any network connection (`navigator.onLine`).
+   - **Blob Sync Queue (Deferred):** Holds heavy payloads (signature drawing vectors, JPEG proof photos). Defer sync to unmetered connections (Wi-Fi) or require manual user triggers in the UI.
+3. **Queue Visibility:** The PWA UI must feature separate counter badges displaying the number of pending items in both queues.
+4. **Server Playback:** The backend API accepts event batches, writes them to a `waybill_events` table, and replays them sequentially to materialize the latest state in the main read tables (e.g. `waybills`).
+
+---
+
+## 3. Authentication & Access Control
+
+- **Driver Portal Login:** Drivers authenticate with a fast 4-digit PIN for glove/mobile convenience.
+- **Dispatcher Portal Login:** Dispatchers authenticate with traditional secure email/password or OAuth.
+- **Backend Authorization:** Both login paths issue standard JWTs containing role claims (`DRIVER` vs. `DISPATCHER`). 
+- **Role-Based Access Control (RBAC):** Drivers can only query and submit events for resources explicitly assigned to their driver ID. Dispatchers have global access.
+
+---
+
+## 4. Multi-Agent Development & Resiliency Guidelines
+
+To ensure continuous development across different IDEs, environments, and agent limits:
+
+1. **Dynamic Handoff (HANDOFF.md):** 
+   - A `HANDOFF.md` file must reside in the root of the project working directory at all times.
+   - AI agents must update this file dynamically before completing their turn or hitting limits, detailing completed features, remaining milestones, and verification status.
+2. **Test-First Implementation:** 
+   - Implement automated Jest integration tests for all API routes and database boundaries.
+   - Run verification tests frequently. A clean, failing test is the best handoff mechanism for another agent.

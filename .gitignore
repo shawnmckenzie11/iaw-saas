@@ -1,8 +1,27 @@
 node_modules/
 mobile/node_modules/
+backend/node_modules/
+frontend/node_modules/
 .expo/
 mobile/.expo/
 .DS_Store
 mobile/.DS_Store
 db.json
 invoices.json
+
+# Secrets & local env
+backend/.env
+.env
+.env.local
+
+# Build & test artifacts
+backend/dist/
+frontend/dist/
+backend/uploads/
+test-results/
+playwright-report/
+blob-report/
+
+# Agent orchestration scratch (not product code)
+.agents/
+ORIGINAL_REQUEST.md

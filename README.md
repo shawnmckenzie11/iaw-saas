@@ -81,3 +81,11 @@ node mobile/src/tests/test_hashing_and_waybill.js
 ### 4. Simulating Offline & Conflict States
 - **Offline Simulation**: The app Dashboard features an interactive **Network Connection Status** switch. Toggle it off to test local SQLite database retention. You can log new pickups and deliveries completely offline, then turn it back on to trigger automatic background synchronization.
 - **Conflict Simulation**: To simulate a duplicate waybill/UUID key conflict from the database server, input the word `"conflict"` or `"fail"` inside the **Parcel Description** field when logging a pickup. When synced, the record sync state will be marked as `CONFLICT`, showing an alert badge and offering a manual "Retry Force" resolution button on the Dashboard log.
+
+---
+
+## 🛠️ Post-MVP Roadmap Notes
+
+1. **McKenzian Boilerplate Template (Future Task)**: Once this MVP is fully completed and verified in production, strip out the IAW Courier business-specific logic (e.g. QuickBooks schemas) and save the core Express + Prisma (Postgres) and React PWA (IndexedDB + Dexie.js) sync engine architecture as a reusable template repository (e.g., `mckenzian-pwa-boilerplate`). This will serve as the base repository for future projects under the McKenzian Solutions portfolio.
+2. **Antigravity `/learn` Checkpoint**: Upon completing the v1.0.0 release of this MVP, execute the `/learn` slash command in your Antigravity IDE terminal. This will persist the lessons, file structures, and code preferences learned during this project to your global agent configurations.
+
