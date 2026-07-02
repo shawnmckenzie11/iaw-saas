@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from '../app';
 import { prisma } from '../config/db';
 import { loadTestCredentials } from '../seedConfig';
+import { randomUUID } from 'crypto';
 
 describe('M2 Dual Auth & RBAC Boundaries Integration Tests', () => {
   let dispatcherToken: string;
@@ -9,13 +10,25 @@ describe('M2 Dual Auth & RBAC Boundaries Integration Tests', () => {
   let driver2Token: string;
   const credentials = loadTestCredentials();
 
+  const w1Uuid = randomUUID();
+  const w2Uuid = randomUUID();
+  const wUnassignedUuid = randomUUID();
+  const w1Waybill = `W-TEST-01-${Math.random().toString(36).substring(7)}`;
+  const w2Waybill = `W-TEST-02-${Math.random().toString(36).substring(7)}`;
+  const wUnassignedWaybill = `W-TEST-UNASSIGNED-${Math.random().toString(36).substring(7)}`;
+  const legacyUuuids = [
+    '11111111-1111-1111-1111-fffffffffaaa',
+    '22222222-2222-2222-2222-fffffffffbbb',
+    '33333333-3333-3333-3333-fffffffffccc'
+  ];
+
   beforeAll(async () => {
     // Ensure test records are clean
     await prisma.deliveryRecord.deleteMany({
       where: {
         OR: [
-          { waybillNumber: { in: ['W-TEST-01', 'W-TEST-02', 'W-TEST-UNASSIGNED'] } },
-          { clientSideUuid: { in: ['11111111-1111-1111-1111-fffffffffaaa', '22222222-2222-2222-2222-fffffffffbbb', '33333333-3333-3333-3333-fffffffffccc'] } }
+          { waybillNumber: { in: [w1Waybill, w2Waybill, wUnassignedWaybill] } },
+          { clientSideUuid: { in: [w1Uuid, w2Uuid, wUnassignedUuid, ...legacyUuuids] } }
         ]
       },
     });
@@ -23,8 +36,8 @@ describe('M2 Dual Auth & RBAC Boundaries Integration Tests', () => {
     // Create test waybills for RBAC tests
     await prisma.deliveryRecord.create({
       data: {
-        clientSideUuid: '11111111-1111-1111-1111-fffffffffaaa',
-        waybillNumber: 'W-TEST-01',
+        clientSideUuid: w1Uuid,
+        waybillNumber: w1Waybill,
         pickupLocationName: 'Sudbury Depot',
         pickupAddress: 'Sudbury Depot',
         dropoffDestinationName: 'Lively Hub',
@@ -38,8 +51,8 @@ describe('M2 Dual Auth & RBAC Boundaries Integration Tests', () => {
 
     await prisma.deliveryRecord.create({
       data: {
-        clientSideUuid: '22222222-2222-2222-2222-fffffffffbbb',
-        waybillNumber: 'W-TEST-02',
+        clientSideUuid: w2Uuid,
+        waybillNumber: w2Waybill,
         pickupLocationName: 'Sudbury Depot',
         pickupAddress: 'Sudbury Depot',
         dropoffDestinationName: 'Hanmer Site',
@@ -53,8 +66,8 @@ describe('M2 Dual Auth & RBAC Boundaries Integration Tests', () => {
 
     await prisma.deliveryRecord.create({
       data: {
-        clientSideUuid: '33333333-3333-3333-3333-fffffffffccc',
-        waybillNumber: 'W-TEST-UNASSIGNED',
+        clientSideUuid: wUnassignedUuid,
+        waybillNumber: wUnassignedWaybill,
         pickupLocationName: 'Sudbury Depot',
         pickupAddress: 'Sudbury Depot',
         dropoffDestinationName: 'Azilda Office',
@@ -65,20 +78,20 @@ describe('M2 Dual Auth & RBAC Boundaries Integration Tests', () => {
         status: 'DRAFT',
       },
     });
-  });
+  }, 30000);
 
   afterAll(async () => {
     // Clean up test records
     await prisma.deliveryRecord.deleteMany({
       where: {
         OR: [
-          { waybillNumber: { in: ['W-TEST-01', 'W-TEST-02', 'W-TEST-UNASSIGNED'] } },
-          { clientSideUuid: { in: ['11111111-1111-1111-1111-fffffffffaaa', '22222222-2222-2222-2222-fffffffffbbb', '33333333-3333-3333-3333-fffffffffccc'] } }
+          { waybillNumber: { in: [w1Waybill, w2Waybill, wUnassignedWaybill] } },
+          { clientSideUuid: { in: [w1Uuid, w2Uuid, wUnassignedUuid, ...legacyUuuids] } }
         ]
       },
     });
     await prisma.$disconnect();
-  });
+  }, 30000);
 
   describe('Dispatcher Authentication', () => {
     const dispatcherLogin = {
@@ -163,40 +176,40 @@ describe('M2 Dual Auth & RBAC Boundaries Integration Tests', () => {
   describe('RBAC Scoping Boundaries', () => {
     it('should allow dispatcher global access to all waybills', async () => {
       const w1 = await request(app)
-        .get('/api/waybills/W-TEST-01')
+        .get(`/api/waybills/${w1Waybill}`)
         .set('Authorization', `Bearer ${dispatcherToken}`);
       expect(w1.status).toBe(200);
 
       const w2 = await request(app)
-        .get('/api/waybills/W-TEST-02')
+        .get(`/api/waybills/${w2Waybill}`)
         .set('Authorization', `Bearer ${dispatcherToken}`);
       expect(w2.status).toBe(200);
 
       const wUnassigned = await request(app)
-        .get('/api/waybills/W-TEST-UNASSIGNED')
+        .get(`/api/waybills/${wUnassignedWaybill}`)
         .set('Authorization', `Bearer ${dispatcherToken}`);
       expect(wUnassigned.status).toBe(200);
     });
 
     it('should allow driver to access their assigned waybill', async () => {
       const res = await request(app)
-        .get('/api/waybills/W-TEST-01')
+        .get(`/api/waybills/${w1Waybill}`)
         .set('Authorization', `Bearer ${driver1Token}`);
       expect(res.status).toBe(200);
-      expect(res.body.waybillNumber).toBe('W-TEST-01');
+      expect(res.body.waybillNumber).toBe(w1Waybill);
     });
 
     it('should allow driver to access unassigned waybill', async () => {
       const res = await request(app)
-        .get('/api/waybills/W-TEST-UNASSIGNED')
+        .get(`/api/waybills/${wUnassignedWaybill}`)
         .set('Authorization', `Bearer ${driver1Token}`);
       expect(res.status).toBe(200);
-      expect(res.body.waybillNumber).toBe('W-TEST-UNASSIGNED');
+      expect(res.body.waybillNumber).toBe(wUnassignedWaybill);
     });
 
     it('should deny driver access to another driver waybill', async () => {
       const res = await request(app)
-        .get('/api/waybills/W-TEST-02')
+        .get(`/api/waybills/${w2Waybill}`)
         .set('Authorization', `Bearer ${driver1Token}`);
       expect(res.status).toBe(403);
     });

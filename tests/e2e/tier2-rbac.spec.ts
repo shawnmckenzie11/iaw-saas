@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { prisma } from '../../backend/src/config/db';
 import { e2eCredentials, getDispatcherToken, getDriverToken } from './credentials';
 
 test.describe('Feature 3: API RBAC Gatekeeping (Tier 2)', () => {
@@ -15,9 +16,8 @@ test.describe('Feature 3: API RBAC Gatekeeping (Tier 2)', () => {
     // Helper to ensure a waybill exists and is assigned
     const ensureWaybill = async (waybillNumber: string, clientSideUuid: string, driverId: string | null) => {
       // Delete if exists to get clean state
-      await request.delete(`/api/waybills/${waybillNumber}`, {
-        headers: { 'Authorization': `Bearer ${dispatcherToken}` }
-      }).catch(() => {});
+      await prisma.waybillEvent.deleteMany({ where: { waybillNumber } });
+      await prisma.deliveryRecord.delete({ where: { waybillNumber } }).catch(() => {});
 
       // Create waybill
       const createRes = await request.post('/api/waybills', {

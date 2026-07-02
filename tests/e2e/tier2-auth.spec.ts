@@ -128,22 +128,34 @@ test.describe('Feature 2: Dispatcher Credentials Authentication (Tier 2)', () =>
       JWT_SECRET
     );
 
-    // Put expired session in storage layers and reload dashboard
-    await page.goto('/');
-    await page.evaluate((tok) => {
-      const sess = {
+    const sess = {
+      token: expiredToken,
+      role: 'DISPATCHER',
+      username: 'dispatch'
+    };
+    const str = JSON.stringify(sess);
+
+    // Set cookie on browser context before navigating
+    await page.context().addCookies([{
+      name: 'iaw_auth_session',
+      value: encodeURIComponent(str),
+      url: 'http://localhost:3000',
+      path: '/'
+    }]);
+
+    // Set localStorage / sessionStorage during initialization
+    await page.addInitScript((tok) => {
+      const sessObj = {
         token: tok,
         role: 'DISPATCHER',
         username: 'dispatch'
       };
-      const str = JSON.stringify(sess);
-      localStorage.setItem('iaw_auth_session', str);
-      sessionStorage.setItem('iaw_auth_session', str);
-      document.cookie = `iaw_auth_session=${encodeURIComponent(str)}; path=/; max-age=43200`;
+      const sessStr = JSON.stringify(sessObj);
+      localStorage.setItem('iaw_auth_session', sessStr);
+      sessionStorage.setItem('iaw_auth_session', sessStr);
     }, expiredToken);
 
-    // Reload the page: the API fetch will fail with 401, triggering logout
-    await page.reload();
+    await page.goto('/');
     await expect(page.getByRole('button', { name: 'Driver (PIN)' })).toBeVisible();
   });
 });

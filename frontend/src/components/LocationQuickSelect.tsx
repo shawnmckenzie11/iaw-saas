@@ -7,6 +7,7 @@ export interface LocationQuickSelectProps {
   selected: string;
   isOther: boolean;
   showAll: boolean;
+  hideMore?: boolean;
   onSelect: (name: string) => void;
   onOther: () => void;
   onShowAll: () => void;
@@ -22,6 +23,7 @@ export default function LocationQuickSelect({
   selected,
   isOther,
   showAll,
+  hideMore = false,
   onSelect,
   onOther,
   onShowAll,
@@ -46,7 +48,7 @@ export default function LocationQuickSelect({
             {getLocationShortName(name)}
           </button>
         ))}
-        {!showAllTrigger && (
+        {!hideMore && !showAllTrigger && (
           <button type="button" className="quick-select-btn" onClick={onShowAll}>
             More...
           </button>

@@ -110,8 +110,8 @@ function DispatchAssignmentCell({
  */
 function statusLabel(status: string): string {
   if (status === 'DELIVERED') return 'Completed';
-  if (status === 'DRAFT') return 'Pending-Pickup';
-  if (status === 'PICKED_UP') return 'Pending-Delivery';
+  if (status === 'DRAFT') return 'Pending Pickup';
+  if (status === 'PICKED_UP') return 'Pending Delivery';
   return status;
 }
 
@@ -740,15 +740,27 @@ export default function DashboardPage({
     actionLabel?: string;
     showDelete?: boolean;
     hidePrice?: boolean;
+    /** Dispatch tables lead with pickup/dropoff route columns. */
+    routeFirst?: boolean;
   }) => (
     <thead>
       <tr>
+        {opts.routeFirst && (
+          <>
+            <th className="col-pickup">Pickup</th>
+            <th className="col-dropoff">Dropoff</th>
+          </>
+        )}
         <th>Waybill</th>
         <th>Date</th>
         <th>Time</th>
         <th className="col-cargo">Cargo</th>
-        <th className="col-pickup">Pickup</th>
-        <th className="col-dropoff">Dropoff</th>
+        {!opts.routeFirst && (
+          <>
+            <th className="col-pickup">Pickup</th>
+            <th className="col-dropoff">Dropoff</th>
+          </>
+        )}
         {!opts.hidePrice && <th className="col-price">$</th>}
         <th>Status</th>
         {opts.showCapture && <th>Capture</th>}
@@ -765,7 +777,7 @@ export default function DashboardPage({
   /**
    * Renders a single waybill table row for dispatch or driver portal views.
    */
-  const renderWaybillRow = (wb: Waybill, readOnly = false) => {
+  const renderWaybillRow = (wb: Waybill, readOnly = false, routeFirst = false) => {
     const price = effectiveWaybillPrice(wb);
     const timestamp = wb.capturedAt ?? wb.createdAt;
     const hasConflict = conflictWaybillNumbers.has(wb.waybillNumber);
@@ -780,6 +792,39 @@ export default function DashboardPage({
       !isDriverPreview &&
       dispatchTab === 'ACTIVE' &&
       (wb.status === 'DRAFT' || wb.status === 'PICKED_UP');
+
+    const routeCells = (
+      <>
+        <td className="col-pickup" title={wb.pickupLocationName}>
+          {getLocationShortName(wb.pickupLocationName)}
+        </td>
+        <td className="col-dropoff" title={wb.dropoffDestinationName}>
+          {getLocationShortName(wb.dropoffDestinationName)}
+        </td>
+      </>
+    );
+
+    const identityCells = (
+      <>
+        <td>
+          <div className="table-waybill">{wb.waybillNumber}</div>
+          {wb.externalSource === 'google_sheet' && !hideDriverPricing && (
+            <span className="form-intake-badge">LIVE FORM</span>
+          )}
+          {priorityBadgeLabel(wb) && (
+            <div className="priority-badges">
+              <span className="rush-badge">{priorityBadgeLabel(wb)}</span>
+            </div>
+          )}
+          {hasConflict && <span className="conflict-badge">CONFLICT</span>}
+        </td>
+        <td>{formatWaybillDate(timestamp)}</td>
+        <td>{formatWaybillTime(timestamp)}</td>
+        <td className="col-cargo" title={wb.parcelDescription}>
+          {abbreviateCargo(wb.parcelDescription)}
+        </td>
+      </>
+    );
 
     return (
       <tr
@@ -799,29 +844,17 @@ export default function DashboardPage({
           }
         }}
       >
-        <td>
-          <div className="table-waybill">{wb.waybillNumber}</div>
-          {wb.externalSource === 'google_sheet' && !hideDriverPricing && (
-            <span className="form-intake-badge">LIVE FORM</span>
-          )}
-          {priorityBadgeLabel(wb) && (
-            <div className="priority-badges">
-              <span className="rush-badge">{priorityBadgeLabel(wb)}</span>
-            </div>
-          )}
-          {hasConflict && <span className="conflict-badge">CONFLICT</span>}
-        </td>
-        <td>{formatWaybillDate(timestamp)}</td>
-        <td>{formatWaybillTime(timestamp)}</td>
-        <td className="col-cargo" title={wb.parcelDescription}>
-          {abbreviateCargo(wb.parcelDescription)}
-        </td>
-        <td className="col-pickup" title={wb.pickupLocationName}>
-          {getLocationShortName(wb.pickupLocationName)}
-        </td>
-        <td className="col-dropoff" title={wb.dropoffDestinationName}>
-          {getLocationShortName(wb.dropoffDestinationName)}
-        </td>
+        {routeFirst ? (
+          <>
+            {routeCells}
+            {identityCells}
+          </>
+        ) : (
+          <>
+            {identityCells}
+            {routeCells}
+          </>
+        )}
         {!hideDriverPricing && (
           <td className="col-price">{price > 0 ? `$${price.toFixed(0)}` : '—'}</td>
         )}
@@ -873,7 +906,7 @@ export default function DashboardPage({
               }}
             >
               {wb.status === 'DRAFT'
-                ? 'Pick Up'
+                ? 'Pickup'
                 : wb.podRequired || wb.additionalComments === '__podRequired'
                   ? 'Deliver w/ POD'
                   : 'Deliver'}
@@ -963,12 +996,14 @@ export default function DashboardPage({
         </div>
       )}
 
+      {isDispatcher && (
       <div className="action-row">
-        <button type="button" className="btn-primary" onClick={onNewPickup}>
-          ➕ NEW PICKUP (WAYBILL)
-        </button>
+        {!isDriverPreview && (
+          <button type="button" className="btn-primary" onClick={onNewPickup}>
+            ➕ NEW PICKUP (WAYBILL)
+          </button>
+        )}
 
-        {isDispatcher && (
           <>
             {isDriverPreview ? (
               <button
@@ -1010,8 +1045,8 @@ export default function DashboardPage({
               📊 ACCOUNTING & INVOICES
             </button>
           </>
-        )}
       </div>
+      )}
 
       {isDispatcher && !isDriverPreview && (
         <div className="dispatch-tabs">
@@ -1139,8 +1174,8 @@ export default function DashboardPage({
                   <div className="waybill-table-wrap completed-deliveries-table">
                     {group.items.length > 0 ? (
                       <table className="waybill-table">
-                        {renderTableHeader({ actionLabel: 'Assignment' })}
-                        <tbody>{group.items.map((wb) => renderWaybillRow(wb))}</tbody>
+                        {renderTableHeader({ actionLabel: 'Assignment', routeFirst: true })}
+                        <tbody>{group.items.map((wb) => renderWaybillRow(wb, false, true))}</tbody>
                       </table>
                     ) : (
                       <p className="empty-text pending-price-empty">No deliveries in this section.</p>
@@ -1158,8 +1193,9 @@ export default function DashboardPage({
               showCapture: isDispatcher && !isDriverPreview && dispatchTab === 'COMPLETED',
               actionLabel: 'Assignment',
               showDelete: showDispatchDeleteCol,
+              routeFirst: true,
             })}
-            <tbody>{visibleWaybills.map((wb) => renderWaybillRow(wb))}</tbody>
+            <tbody>{visibleWaybills.map((wb) => renderWaybillRow(wb, false, true))}</tbody>
           </table>
         </div>
       )}

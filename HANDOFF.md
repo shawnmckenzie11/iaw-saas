@@ -144,6 +144,10 @@ The legacy Expo `mobile/` prototype was removed; the React PWA is the sole clien
 - **Pickup "Other" fields**: Delivery details and weight range use inline editable "Other" inputs in the picker row (no separate popup field).
 - **Payroll seed**: `seed.ts` upserts `Employee` rows dynamically from all active `Driver` records (names stay in sync with driver roster).
 
+### Dispatch / driver UX (2026-07-02 — driver new-waybill removal + dispatch column order)
+- **Driver new-waybill UI removed**: `NEW PICKUP (WAYBILL)` button and dispatcher action row hidden for drivers; `PickupPage` + create APIs remain wired for dispatcher job creation and driver continue-pickup on assigned jobs.
+- **Dispatch table columns**: Active, Pending Price, and Completed tabs show Pickup and Dropoff as columns 1–2 (before Waybill/Date/Time/Cargo).
+
 ### Dispatch / driver UX fixes (2026-07-02)
 - **Pending Price tab**: Today's + Unassigned collapsible section bars (mirrors driver completed history); auto-rated or stored prices move to Completed tab via `effectiveWaybillPrice`.
 - **Driver pickup assignment**: `driverId` persisted on `WAYBILL_PICKED_UP` projection + driver event API fallback; queued waybill merge preserves creator assignment after sync.
@@ -203,6 +207,31 @@ The legacy Expo `mobile/` prototype was removed; the React PWA is the sole clien
 | Walkthrough E2E | **PASS** | `npm run test:e2e:walkthrough` — video at `test-results/e2e-walkthrough-*/video.webm` |
 
 **Shipped:** Archive-driven location suggestions at seed (no PII in git); Playwright walkthrough spec + env loading fixes.
+
+---
+
+## 10. Dispatch Job Creation + Location Registry (2026-07-02)
+
+### Status flow (dispatcher create)
+- **Queue for Pickup** → `WAYBILL_CREATED` / `DRAFT` — driver sees **Pending Pickup** + **Pickup** button with waybill summary.
+- **Picked Up** → `WAYBILL_CREATED` + `WAYBILL_PICKED_UP` / `PICKED_UP` — driver sees **Pending Delivery** + Deliver / Deliver w/ POD.
+
+### Verified businesses added
+- `Fed Ex Depot (new sudbury)` — 1399 Marcus Dr Unit A001 Suite, Greater Sudbury, ON P3B 4K6
+- `Puro Depot (Lively/Kelly Lake)` — 1300 Kelly Lake Rd, Greater Sudbury, ON P3E 5P4
+- `Redpath (North)` — distinct from ODP and Falconbridge; archive aliases (`Repath-North`, etc.) map via `csvLocationMapper`
+
+### Dropoff quick select
+- Max 10 chips, registered businesses only; **More** hidden on dropoff (`hideMore` on `LocationQuickSelect`).
+- `computeConditionalDropoffs` maps archive rows through `mapToVerified` before ranking.
+
+### Verification
+| Test Category | Status | Command |
+|---|---|---|
+| Backend unit/integration | **PASS** | `cd backend && npm run test` — 77/77 |
+| Frontend build | **PASS** | `npm run build --prefix frontend` |
+
+Re-run `cd backend && npx ts-node src/seed.ts` against archive CSV to regenerate `suggestions.generated.json` with filtered dropoffs.
 
 ---
 

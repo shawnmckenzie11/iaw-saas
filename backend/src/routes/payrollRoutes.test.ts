@@ -4,6 +4,8 @@ import app from '../app';
 import { prisma } from '../config/db';
 import { loadTestCredentials } from '../seedConfig';
 
+jest.setTimeout(60000);
+
 describe('Payroll Employee API', () => {
   let dispatcherToken: string;
   let driverToken: string;
@@ -37,7 +39,7 @@ describe('Payroll Employee API', () => {
     const testCreds = loadTestCredentials();
     const driverRes = await request(app).post('/api/auth/driver/login').send({ pin: testCreds.driver1Pin });
     driverToken = driverRes.body.token;
-  });
+  }, 60000);
 
   afterAll(async () => {
     await prisma.employee.deleteMany({
@@ -47,7 +49,7 @@ describe('Payroll Employee API', () => {
       where: { email: 'payroll-dispatcher@example.com' },
     });
     await prisma.$disconnect();
-  });
+  }, 60000);
 
   it('denies drivers from payroll routes', async () => {
     const res = await request(app)

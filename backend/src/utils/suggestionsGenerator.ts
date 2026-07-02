@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { VERIFIED_BUSINESSES } from './csvLocationMapper';
-import { LOCATION_COORDS } from './locationGeoLookup';
+import { mapToVerified, VERIFIED_BUSINESSES } from './csvLocationMapper';
+import { LOCATION_ADDRESSES, LOCATION_COORDS } from './locationGeoLookup';
 import { ParsedArchiveRow, readArchiveCsv } from './archiveCsvImporter';
 
 /** Minimum archive rows required before overwriting committed synthetic fixtures. */
@@ -42,12 +42,14 @@ export function computeConditionalDropoffs(
   rows: ParsedArchiveRow[],
   limitPerPickup = 10
 ): Record<string, string[]> {
+  const verifiedSet = new Set<string>(VERIFIED_BUSINESSES);
   const pairs = new Map<string, Map<string, number>>();
 
   for (const row of rows) {
-    const pickup = row.pickupLocationName;
-    const dropoff = row.dropoffDestinationName;
+    const pickup = mapToVerified(row.pickupLocationName);
+    const dropoff = mapToVerified(row.dropoffDestinationName);
     if (!pickup || !dropoff || pickup === dropoff) continue;
+    if (!verifiedSet.has(pickup) || !verifiedSet.has(dropoff)) continue;
 
     if (!pairs.has(pickup)) pairs.set(pickup, new Map());
     const dropoffCounts = pairs.get(pickup)!;
@@ -111,8 +113,26 @@ export function buildSuggestionsArtifact(rows: ParsedArchiveRow[]): LocationSugg
 
   for (const name of allNames) {
     const coords = LOCATION_COORDS[name];
-    const address = addresses.get(name) ?? name;
-    if (!coords && address === name) continue;
+    const address = addresses.get(name) ?? LOCATION_ADDRESSES[name];
+    if (address) {
+      locations[name] = {
+        address,
+        lat: coords?.lat ?? 46.49,
+        lon: coords?.lon ?? -80.99,
+      };
+      continue;
+    }
+    if (!coords) continue;
+    locations[name] = {
+      address: addresses.get(name) ?? name,
+      lat: coords.lat,
+      lon: coords.lon,
+    };
+  }
+
+  for (const [name, address] of Object.entries(LOCATION_ADDRESSES)) {
+    if (locations[name]) continue;
+    const coords = LOCATION_COORDS[name];
     locations[name] = {
       address,
       lat: coords?.lat ?? 46.49,

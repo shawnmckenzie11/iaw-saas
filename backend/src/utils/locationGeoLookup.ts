@@ -18,6 +18,7 @@ export const LOCATION_COORDS: Record<string, { lat: number; lon: number }> = {
   'Dr. Jordi Cisa': { lat: 46.492, lon: -80.987 },
   Dunrite: { lat: 46.481, lon: -81.008 },
   'Enterprise Radiators': { lat: 46.483, lon: -81.005 },
+  'Fed Ex Depot (new sudbury)': { lat: 46.512, lon: -80.918 },
   'Epiroc Lively': { lat: 46.431, lon: -81.078 },
   'Equipment North': { lat: 46.479, lon: -81.01 },
   'Equipment Sales': { lat: 46.477, lon: -81.013 },
@@ -30,8 +31,10 @@ export const LOCATION_COORDS: Record<string, { lat: number; lon: number }> = {
   Nedco: { lat: 46.49, lon: -80.993 },
   Northfast: { lat: 46.475, lon: -81.016 },
   'Onaping Depth Project (ODP)': { lat: 46.465, lon: -81.025 },
+  'Puro Depot (Lively/Kelly Lake)': { lat: 46.418, lon: -81.088 },
   Rastall: { lat: 46.484, lon: -81.004 },
   'Redpath (Falconbridge Rd)': { lat: 46.472, lon: -81.02 },
+  'Redpath (North)': { lat: 46.468, lon: -81.028 },
   'Rock-Tech': { lat: 46.434, lon: -81.074 },
   'Sandvik Mining': { lat: 46.435, lon: -81.073 },
   'Shop Industrial': { lat: 46.488, lon: -80.996 },
@@ -46,4 +49,14 @@ export const LOCATION_COORDS: Record<string, { lat: number; lon: number }> = {
   'Tracks & Wheels': { lat: 46.441, lon: -81.067 },
   'Victoria Mine': { lat: 46.442, lon: -81.066 },
   Wajax: { lat: 46.443, lon: -81.065 },
+};
+
+/**
+ * Canonical street addresses for verified businesses without archive frequency data.
+ */
+export const LOCATION_ADDRESSES: Record<string, string> = {
+  'Fed Ex Depot (new sudbury)':
+    '1399 Marcus Dr Unit A001 Suite, Greater Sudbury, ON P3B 4K6',
+  'Puro Depot (Lively/Kelly Lake)':
+    '1300 Kelly Lake Rd, Greater Sudbury, ON P3E 5P4',
 };

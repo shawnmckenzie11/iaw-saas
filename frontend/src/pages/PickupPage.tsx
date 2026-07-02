@@ -67,11 +67,16 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
   const [pickupIsOther, setPickupIsOther] = useState(false);
   const [dropoffIsOther, setDropoffIsOther] = useState(false);
   const [showAllPickups, setShowAllPickups] = useState(false);
-  const [showAllDropoffs, setShowAllDropoffs] = useState(false);
   const [selectedPickupKey, setSelectedPickupKey] = useState<string | null>(null);
 
   const isEditing = !!editWaybill;
   const isDriver = session.role === 'DRIVER';
+  const isDispatchCreate = !isDriver && !isEditing;
+  const isDriverDraftPickup =
+    isEditing &&
+    isDriver &&
+    editWaybill?.status === 'DRAFT' &&
+    !hasPendingDropoff(editWaybill);
   const resolvingPendingDropoff = isEditing && editWaybill ? hasPendingDropoff(editWaybill) : false;
   const finalDesc = descriptionOption === 'Other' ? description : descriptionOption;
   const finalWeight =
@@ -105,8 +110,8 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
   );
 
   const quickDropoffs = useMemo(
-    () => quickDropoffOptions(rankedDropoffs, allDropoffOptions, showAllDropoffs),
-    [rankedDropoffs, allDropoffOptions, showAllDropoffs]
+    () => quickDropoffOptions(rankedDropoffs, allDropoffOptions, false),
+    [rankedDropoffs, allDropoffOptions]
   );
 
   /**
@@ -183,7 +188,6 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
     const address = addressForLocation(name);
     if (address) setPickupAddress(address);
     setSelectedPickupKey(name);
-    setShowAllDropoffs(false);
     setDropoffDestination('');
     setDropoffAddress('');
     setDropoffIsOther(false);
@@ -197,6 +201,25 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
     setDropoffIsOther(false);
     const address = addressForLocation(name);
     if (address) setDropoffAddress(address);
+  };
+
+  /**
+   * Validates dispatcher create form (pickup + dropoff + cargo required).
+   */
+  const isDispatchCreateValid = (): boolean => {
+    const isDescValid = descriptionOption === 'Other' ? !!description.trim() : true;
+    const isWeightValid =
+      weightClassOption === 'Other' ? isValidCustomWeight(weightClass) : true;
+    const isManualWaybillValid = !manualWaybill.trim() || /^\d{5}$/.test(manualWaybill.trim());
+    return (
+      !!pickupLocation &&
+      !!pickupAddress &&
+      !!dropoffDestination &&
+      !!dropoffAddress &&
+      isDescValid &&
+      isWeightValid &&
+      isManualWaybillValid
+    );
   };
 
   /**
@@ -311,6 +334,59 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
       timestamp: pickedUpAt,
       data: { ...payload, pickedUpAt },
     });
+  };
+
+  /**
+   * Queues a dispatcher-created waybill as DRAFT (queue for pickup) or PICKED_UP.
+   */
+  const persistDispatchWaybill = async (markPickedUp: boolean) => {
+    if (!isDispatchCreateValid()) {
+      if (weightClassOption === 'Other' && !isValidCustomWeight(weightClass)) {
+        setErrorMsg('Weight must be a whole number greater than 75 lbs.');
+      } else {
+        setErrorMsg('Please complete pickup, dropoff, and cargo details (*).');
+      }
+      return;
+    }
+    setErrorMsg('');
+
+    const manualNumber = resolveManualWaybillNumber();
+    const waybillNumber = manualNumber ?? `W-${Date.now().toString().slice(-4)}`;
+    if (manualNumber && !(await assertManualWaybillAvailable(manualNumber))) {
+      setErrorMsg(`Waybill ${manualNumber} already exists. Choose a different number.`);
+      return;
+    }
+
+    const eventData = buildEventData();
+    const timestamp = new Date().toISOString();
+    const clientId = crypto.randomUUID();
+
+    await queueEvent({
+      id: clientId,
+      clientSideUuid: clientId,
+      waybillNumber,
+      eventType: 'WAYBILL_CREATED',
+      timestamp,
+      data: { ...eventData, waybillNumber },
+    });
+
+    if (markPickedUp) {
+      const pickId = crypto.randomUUID();
+      await queueEvent({
+        id: pickId,
+        clientSideUuid: clientId,
+        waybillNumber,
+        eventType: 'WAYBILL_PICKED_UP',
+        timestamp,
+        data: { ...eventData, pickedUpAt: timestamp },
+      });
+    }
+
+    await syncManager.refresh();
+    if (isOnline && session.token) {
+      void syncManager.syncQueue(session);
+    }
+    onBack();
   };
 
   /**
@@ -450,16 +526,20 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
           ← {currentStep === 1 ? 'Exit' : 'Back'}
         </button>
         <h2 className="pickup-title">
-          {resolvingPendingDropoff
-            ? `Set Dropoff — ${editWaybill?.waybillNumber}`
-            : isEditing
-              ? `Continue Pickup — ${editWaybill?.waybillNumber}`
-              : 'New Delivery Capture'}
+          {isDispatchCreate
+            ? 'New Dispatch Job'
+            : resolvingPendingDropoff
+              ? `Set Dropoff — ${editWaybill?.waybillNumber}`
+              : isDriverDraftPickup
+                ? `Pickup — ${editWaybill?.waybillNumber}`
+                : isEditing
+                  ? `Continue Pickup — ${editWaybill?.waybillNumber}`
+                  : 'New Delivery Capture'}
         </h2>
       </header>
 
-      <div className="wizard-steps stepper-3">
-        {['Pickup', 'Dropoff', 'Sign'].map((label, index) => {
+      <div className={`wizard-steps ${isDispatchCreate ? 'stepper-2' : 'stepper-3'}`}>
+        {(isDispatchCreate ? ['Pickup', 'Dropoff'] : ['Pickup', 'Dropoff', 'Sign']).map((label, index) => {
           const step = index + 1;
           const done = currentStep > step;
           const active = currentStep === step;
@@ -474,7 +554,37 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
 
       {errorMsg && <div className="login-error">{errorMsg}</div>}
 
-      {currentStep === 1 && (
+      {isDriverDraftPickup && editWaybill && (
+        <div className="wizard-card">
+          <div className="compact-frame">
+            <div className="compact-frame-title">Waybill Summary</div>
+            <div className="modal-details">
+              <div>
+                <strong>Pickup:</strong> {editWaybill.pickupLocationName}
+              </div>
+              <div className="field-hint">{editWaybill.pickupAddress}</div>
+              <div>
+                <strong>Dropoff:</strong> {editWaybill.dropoffDestinationName}
+              </div>
+              <div className="field-hint">{editWaybill.dropoffAddress}</div>
+              <div>
+                <strong>Cargo:</strong> {editWaybill.parcelDescription}
+              </div>
+            </div>
+          </div>
+          <div className="navigation-row">
+            <button
+              type="button"
+              className="btn-primary nav-btn-next"
+              onClick={() => void persistWaybill()}
+            >
+              ✔ Complete Pickup
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!isDriverDraftPickup && currentStep === 1 && (
         <div className="wizard-card">
           <LocationQuickSelect
             label="Quick Select Pickup Location:"
@@ -650,6 +760,80 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
             </button>
           </div>
 
+          {isDispatchCreate && (
+            <>
+              <LocationQuickSelect
+                label="Quick Select Dropoff Destination:"
+                quickOptions={quickDropoffs}
+                fullOptions={allDropoffOptions}
+                selected={dropoffDestination}
+                isOther={dropoffIsOther}
+                showAll={false}
+                hideMore
+                onSelect={handleSelectDropoff}
+                onOther={() => {
+                  setDropoffIsOther(true);
+                  setDropoffDestination('');
+                  setDropoffAddress('');
+                  setDropoffContact('');
+                  setDropoffPhone('');
+                }}
+                onShowAll={() => undefined}
+              />
+
+              {dropoffIsOther && (
+                <div className="compact-frame">
+                  <div className="compact-frame-title">Dropoff Details Verification</div>
+
+                  <label className="field-label">Dropoff Destination *</label>
+                  <input
+                    className="wizard-input"
+                    value={dropoffDestination}
+                    onChange={(e) => setDropoffDestination(e.target.value)}
+                    placeholder="Destination name"
+                    required
+                  />
+
+                  <label className="field-label">Dropoff Address *</label>
+                  <input
+                    className="wizard-input"
+                    value={dropoffAddress}
+                    onChange={(e) => setDropoffAddress(e.target.value)}
+                    placeholder="Street Address"
+                    required
+                  />
+                </div>
+              )}
+
+              <div className="price-preview">
+                <span className="price-preview-label">Route Quote</span>
+                {pricingEst.price > 0
+                  ? `$${pricingEst.price.toFixed(2)} — ${pricingEst.category}`
+                  : `Manual — ${pricingEst.category}`}
+              </div>
+
+              <div className="checkout-options-row">
+                <button
+                  type="button"
+                  className="btn-primary checkout-btn"
+                  disabled={!isDispatchCreateValid()}
+                  onClick={() => void persistDispatchWaybill(false)}
+                >
+                  Queue for Pickup
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary checkout-btn"
+                  disabled={!isDispatchCreateValid()}
+                  onClick={() => void persistDispatchWaybill(true)}
+                >
+                  Picked Up
+                </button>
+              </div>
+            </>
+          )}
+
+          {!isDispatchCreate && (
           <div className="checkout-options-row">
             <button
               type="button"
@@ -668,10 +852,11 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
               Confirm Drop Off Location ➡
             </button>
           </div>
+          )}
         </div>
       )}
 
-      {currentStep === 2 && (
+      {!isDriverDraftPickup && !isDispatchCreate && currentStep === 2 && (
         <div className="wizard-card">
           <LocationQuickSelect
             label="Quick Select Dropoff Destination:"
@@ -679,7 +864,8 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
             fullOptions={allDropoffOptions}
             selected={dropoffDestination}
             isOther={dropoffIsOther}
-            showAll={showAllDropoffs}
+            showAll={false}
+            hideMore
             onSelect={handleSelectDropoff}
             onOther={() => {
               setDropoffIsOther(true);
@@ -688,7 +874,7 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
               setDropoffContact('');
               setDropoffPhone('');
             }}
-            onShowAll={() => setShowAllDropoffs(true)}
+            onShowAll={() => undefined}
           />
 
           {dropoffIsOther && (

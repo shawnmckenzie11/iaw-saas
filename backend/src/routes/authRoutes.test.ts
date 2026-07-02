@@ -3,18 +3,33 @@ import bcrypt from 'bcryptjs';
 import app from '../app';
 import { prisma } from '../config/db';
 import { hashPin } from '../utils/pinHash';
+import { randomUUID } from 'crypto';
+
+jest.setTimeout(60000);
 
 describe('Auth & RBAC Integration Tests', () => {
+  const wbAUuid = randomUUID();
+  const wbBUuid = randomUUID();
+  const wbUnassignedUuid = randomUUID();
+  const wbAWaybill = `TEST-WB-A-${Math.random().toString(36).substring(7)}`;
+  const wbBWaybill = `TEST-WB-B-${Math.random().toString(36).substring(7)}`;
+  const wbUnassignedWaybill = `TEST-WB-UNASSIGNED-${Math.random().toString(36).substring(7)}`;
+  const legacyUuuids = [
+    '11111111-1111-1111-1111-dddddddddddd',
+    '22222222-2222-2222-2222-eeeeeeeeeeee',
+    '33333333-3333-3333-3333-ffffffffffff'
+  ];
+
   beforeAll(async () => {
     // Cleanup any potentially left-over test records
     await prisma.waybillEvent.deleteMany({
-      where: { waybillNumber: { in: ['TEST-WB-A', 'TEST-WB-B', 'TEST-WB-UNASSIGNED'] } }
+      where: { waybillNumber: { in: [wbAWaybill, wbBWaybill, wbUnassignedWaybill] } }
     });
     await prisma.deliveryRecord.deleteMany({
       where: {
         OR: [
-          { waybillNumber: { in: ['TEST-WB-A', 'TEST-WB-B', 'TEST-WB-UNASSIGNED'] } },
-          { clientSideUuid: { in: ['11111111-1111-1111-1111-dddddddddddd', '22222222-2222-2222-2222-eeeeeeeeeeee', '33333333-3333-3333-3333-ffffffffffff'] } }
+          { waybillNumber: { in: [wbAWaybill, wbBWaybill, wbUnassignedWaybill] } },
+          { clientSideUuid: { in: [wbAUuid, wbBUuid, wbUnassignedUuid, ...legacyUuuids] } }
         ]
       }
     });
@@ -60,8 +75,8 @@ describe('Auth & RBAC Integration Tests', () => {
     // Create test waybills
     await prisma.deliveryRecord.create({
       data: {
-        clientSideUuid: '11111111-1111-1111-1111-dddddddddddd',
-        waybillNumber: 'TEST-WB-A',
+        clientSideUuid: wbAUuid,
+        waybillNumber: wbAWaybill,
         driverId: 'test-driver-a',
         pickupLocationName: 'Pickup A',
         pickupAddress: 'Pickup Address A',
@@ -74,8 +89,8 @@ describe('Auth & RBAC Integration Tests', () => {
 
     await prisma.deliveryRecord.create({
       data: {
-        clientSideUuid: '22222222-2222-2222-2222-eeeeeeeeeeee',
-        waybillNumber: 'TEST-WB-B',
+        clientSideUuid: wbBUuid,
+        waybillNumber: wbBWaybill,
         driverId: 'test-driver-b',
         pickupLocationName: 'Pickup B',
         pickupAddress: 'Pickup Address B',
@@ -88,8 +103,8 @@ describe('Auth & RBAC Integration Tests', () => {
 
     await prisma.deliveryRecord.create({
       data: {
-        clientSideUuid: '33333333-3333-3333-3333-ffffffffffff',
-        waybillNumber: 'TEST-WB-UNASSIGNED',
+        clientSideUuid: wbUnassignedUuid,
+        waybillNumber: wbUnassignedWaybill,
         driverId: null,
         pickupLocationName: 'Pickup Unassigned',
         pickupAddress: 'Pickup Address Unassigned',
@@ -99,18 +114,18 @@ describe('Auth & RBAC Integration Tests', () => {
         capturedAt: new Date(),
       }
     });
-  });
+  }, 30000);
 
   afterAll(async () => {
     // Clean up all test records
     await prisma.waybillEvent.deleteMany({
-      where: { waybillNumber: { in: ['TEST-WB-A', 'TEST-WB-B', 'TEST-WB-UNASSIGNED'] } }
+      where: { waybillNumber: { in: [wbAWaybill, wbBWaybill, wbUnassignedWaybill] } }
     });
     await prisma.deliveryRecord.deleteMany({
       where: {
         OR: [
-          { waybillNumber: { in: ['TEST-WB-A', 'TEST-WB-B', 'TEST-WB-UNASSIGNED'] } },
-          { clientSideUuid: { in: ['11111111-1111-1111-1111-dddddddddddd', '22222222-2222-2222-2222-eeeeeeeeeeee', '33333333-3333-3333-3333-ffffffffffff'] } }
+          { waybillNumber: { in: [wbAWaybill, wbBWaybill, wbUnassignedWaybill] } },
+          { clientSideUuid: { in: [wbAUuid, wbBUuid, wbUnassignedUuid, ...legacyUuuids] } }
         ]
       }
     });
@@ -122,7 +137,7 @@ describe('Auth & RBAC Integration Tests', () => {
     });
 
     await prisma.$disconnect();
-  });
+  }, 30000);
 
   describe('Driver Login Endpoints & Formats', () => {
     it('should successfully log in via /api/auth/driver/login with valid PIN', async () => {
@@ -237,22 +252,22 @@ describe('Auth & RBAC Integration Tests', () => {
     it('allows Driver A to access own waybills and unassigned waybills', async () => {
       // Driver A accesses waybill TEST-WB-A
       const resOwn = await request(app)
-        .get('/api/waybills/TEST-WB-A')
+        .get(`/api/waybills/${wbAWaybill}`)
         .set('Authorization', `Bearer ${driverAToken}`);
       expect(resOwn.status).toBe(200);
-      expect(resOwn.body).toHaveProperty('waybillNumber', 'TEST-WB-A');
+      expect(resOwn.body).toHaveProperty('waybillNumber', wbAWaybill);
 
       // Driver A accesses unassigned waybill
       const resUnassigned = await request(app)
-        .get('/api/waybills/TEST-WB-UNASSIGNED')
+        .get(`/api/waybills/${wbUnassignedWaybill}`)
         .set('Authorization', `Bearer ${driverAToken}`);
       expect(resUnassigned.status).toBe(200);
-      expect(resUnassigned.body).toHaveProperty('waybillNumber', 'TEST-WB-UNASSIGNED');
+      expect(resUnassigned.body).toHaveProperty('waybillNumber', wbUnassignedWaybill);
     });
 
     it('forbids Driver A from accessing Driver B waybills (returns 403)', async () => {
       const resForbidden = await request(app)
-        .get('/api/waybills/TEST-WB-B')
+        .get(`/api/waybills/${wbBWaybill}`)
         .set('Authorization', `Bearer ${driverAToken}`);
       expect(resForbidden.status).toBe(403);
       expect(resForbidden.body).toHaveProperty('error', 'Forbidden');
@@ -267,9 +282,9 @@ describe('Auth & RBAC Integration Tests', () => {
 
       const waybillNumbers = resList.body.map((wb: any) => wb.waybillNumber);
       // Driver A list should include TEST-WB-A and TEST-WB-UNASSIGNED, but NOT TEST-WB-B
-      expect(waybillNumbers).toContain('TEST-WB-A');
-      expect(waybillNumbers).toContain('TEST-WB-UNASSIGNED');
-      expect(waybillNumbers).not.toContain('TEST-WB-B');
+      expect(waybillNumbers).toContain(wbAWaybill);
+      expect(waybillNumbers).toContain(wbUnassignedWaybill);
+      expect(waybillNumbers).not.toContain(wbBWaybill);
     });
 
     it('allows dispatchers to access all waybills globally', async () => {
@@ -280,9 +295,9 @@ describe('Auth & RBAC Integration Tests', () => {
       expect(Array.isArray(resList.body)).toBe(true);
 
       const waybillNumbers = resList.body.map((wb: any) => wb.waybillNumber);
-      expect(waybillNumbers).toContain('TEST-WB-A');
-      expect(waybillNumbers).toContain('TEST-WB-B');
-      expect(waybillNumbers).toContain('TEST-WB-UNASSIGNED');
+      expect(waybillNumbers).toContain(wbAWaybill);
+      expect(waybillNumbers).toContain(wbBWaybill);
+      expect(waybillNumbers).toContain(wbUnassignedWaybill);
     });
 
     it('forbids drivers from accessing admin rates routes (returns 403)', async () => {

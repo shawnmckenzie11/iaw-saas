@@ -3,8 +3,8 @@ export function getPriceCategory(locationName: string): string | null {
   if (!locationName) return null;
   const name = locationName.trim().toLowerCase();
   
-  if (name.includes('onaping') || name.includes('odp') || name.includes('craig mine')) {
-    return 'CATEGORY_3'; // Redpath ODP
+  if (name.includes('onaping') || name.includes('odp') || name.includes('craig mine') || name.includes('redpath (north')) {
+    return 'CATEGORY_3'; // Redpath ODP / North mine sites
   }
   if (name.includes('victoria mine') || name.includes('victoria mining')) {
     return 'CATEGORY_4'; // Victoria Mining
@@ -57,7 +57,7 @@ function isSouthEnd(name: string): boolean {
 }
 
 function isNewSudbury(name: string): boolean {
-  const list = ['timberland', 'bdi', 'redpath (falconbridge', 'falconbridge rd', 'bull power', 'bull powertrain', 'nedco', 'frobisher', 'elisabella', 'als environmental', 'als', 'jannatec', 'jannetec', 'maley'];
+  const list = ['timberland', 'bdi', 'redpath (falconbridge', 'falconbridge rd', 'bull power', 'bull powertrain', 'nedco', 'frobisher', 'elisabella', 'als environmental', 'als', 'jannatec', 'jannetec', 'maley', 'fed ex depot'];
   return list.some(item => name.includes(item)) || name.includes('new sudbury');
 }
 
@@ -70,7 +70,7 @@ function isLively(name: string): boolean {
   const list = [
     'komatsu', 'skyline', 'mclean', 'maclean', 'rocktek', 'rock-tech', 'sandvik', 'crd', 'creighton', 
     'tormont', 'toromont', 'wajax', 'epiroc', 'epirock', 'anmar', 'strongco', 'equipment sales', 
-    'dunrite', 'shop industrial', 'equipment north', 'fielding', 'magill', 'mumford', 'lively'
+    'dunrite', 'shop industrial', 'equipment north', 'fielding', 'magill', 'mumford', 'lively', 'puro depot', 'kelly lake'
   ];
   return list.some(item => name.includes(item));
 }
@@ -247,6 +247,9 @@ export function getLocationShortName(name: string): string {
     case "Timberland Equipment Limited": return "Timberland";
     case "BDI Canada Inc.": return "BDI";
     case "Redpath (Falconbridge Rd)": return "Redpath (Falcon)";
+    case "Redpath (North)": return "Redpath (North)";
+    case "Fed Ex Depot (new sudbury)": return "Fed Ex Depot";
+    case "Puro Depot (Lively/Kelly Lake)": return "Puro Depot";
     case "Bull Power": return "Bull Power";
     case "Nedco": return "Nedco";
     case "Sling-Choker Manufacturing": return "Sling-Choker";

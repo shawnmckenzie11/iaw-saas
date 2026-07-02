@@ -177,6 +177,7 @@ export default function App() {
       onToggleNetwork={toggleNetwork}
       onSignOut={handleSignOut}
       onNewPickup={() => {
+        // Dispatcher-only UI entry; PickupPage + POST /api/waybills remain for dispatch job creation.
         setEditPickupWaybill(null);
         setScreen('pickup');
       }}

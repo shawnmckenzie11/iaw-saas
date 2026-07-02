@@ -205,7 +205,8 @@ export async function syncEventsBatch(
     eventType: string;
     timestamp?: string;
     data?: Record<string, unknown>;
-  }>
+  }>,
+  user?: { role: string; driverId?: string }
 ): Promise<string[]> {
   const syncedIds: string[] = [];
 
@@ -216,9 +217,39 @@ export async function syncEventsBatch(
       throw err;
     }
 
+    if (user?.role === 'DRIVER') {
+      if (
+        evt.eventType === 'DISPATCHER_OVERRIDE' ||
+        evt.eventType === 'DISPATCHER_CORRECTION' ||
+        evt.eventType === 'WAYBILL_VOIDED'
+      ) {
+        const err = new Error('Forbidden event type for driver');
+        (err as Error & { statusCode: number }).statusCode = 403;
+        throw err;
+      }
+
+      if (
+        evt.data?.driverId !== undefined &&
+        evt.data?.driverId !== null &&
+        evt.data.driverId !== user.driverId
+      ) {
+        const err = new Error('Forbidden: Cannot assign waybill to another driver');
+        (err as Error & { statusCode: number }).statusCode = 403;
+        throw err;
+      }
+    }
+
     let record = await prisma.deliveryRecord.findUnique({
       where: { waybillNumber: evt.waybillNumber },
     });
+
+    if (user?.role === 'DRIVER') {
+      if (record && record.driverId !== null && record.driverId !== user.driverId) {
+        const err = new Error('Forbidden: Waybill belongs to another driver');
+        (err as Error & { statusCode: number }).statusCode = 403;
+        throw err;
+      }
+    }
 
     const existingEvent = await prisma.waybillEvent.findUnique({ where: { id: evt.id } });
     if (existingEvent) {
@@ -311,22 +342,3 @@ export async function syncEventsBatch(
   return syncedIds;
 }
 
-/**
- * Checks whether a driver may access a waybill based on assignment rules.
- */
-export function canDriverAccessWaybill(
-  driverId: string,
-  record: { driverId: string | null }
-): boolean {
-  return record.driverId === null || record.driverId === driverId;
-}
-
-/**
- * Checks whether a driver may mutate a waybill.
- */
-export function canDriverMutateWaybill(
-  driverId: string,
-  record: { driverId: string | null }
-): boolean {
-  return record.driverId === driverId;
-}

@@ -17,6 +17,7 @@ export const VERIFIED_BUSINESSES = [
   'Dr. Jordi Cisa',
   'Dunrite',
   'Enterprise Radiators',
+  'Fed Ex Depot (new sudbury)',
   'Epiroc Lively',
   'Equipment North',
   'Equipment Sales',
@@ -29,8 +30,10 @@ export const VERIFIED_BUSINESSES = [
   'Nedco',
   'Northfast',
   'Onaping Depth Project (ODP)',
+  'Puro Depot (Lively/Kelly Lake)',
   'Rastall',
   'Redpath (Falconbridge Rd)',
+  'Redpath (North)',
   'Rock-Tech',
   'Sandvik Mining',
   'Shop Industrial',
@@ -65,13 +68,39 @@ export function mapToVerifiedConfident(rawName: string | undefined | null): stri
   if (
     name.includes('redpath') ||
     name.includes('red path') ||
-    name.includes('north mine') ||
-    name.includes('odp') ||
-    name.includes('onaping') ||
-    name.includes('craig mine')
+    name.includes('redpat') ||
+    name.includes('repath')
   ) {
     if (name.includes('falconbridge')) return 'Redpath (Falconbridge Rd)';
+    if (
+      name.includes('north') ||
+      name.includes('redpat-north') ||
+      name.includes('repath-north')
+    ) {
+      return 'Redpath (North)';
+    }
+    if (
+      name.includes('odp') ||
+      name.includes('onaping') ||
+      name.includes('craig mine') ||
+      name.includes('north mine')
+    ) {
+      return 'Onaping Depth Project (ODP)';
+    }
     return 'Onaping Depth Project (ODP)';
+  }
+
+  if (
+    name.includes('fed ex') ||
+    name.includes('fedex') ||
+    name.includes('fed-ex') ||
+    name.includes('federal express')
+  ) {
+    return 'Fed Ex Depot (new sudbury)';
+  }
+
+  if (name.includes('puro')) {
+    return 'Puro Depot (Lively/Kelly Lake)';
   }
 
   if (name.includes('als')) return 'ALS Environmental';

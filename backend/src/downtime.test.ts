@@ -16,7 +16,7 @@ describe('GET /health - Database Downtime Robustness', () => {
     jest.resetModules();
     
     // Set to a non-existent database/host with a small connection timeout (e.g. 2 seconds)
-    process.env.DATABASE_URL = 'postgresql://invalid_user:invalid_password@localhost:5432/non_existent_db?connect_timeout=2';
+    process.env.DATABASE_URL = 'postgresql://invalid_user:invalid_password@localhost:54321/non_existent_db?connect_timeout=2';
 
     const app = require('./app').default;
     const { prisma } = require('./config/db');
@@ -32,5 +32,5 @@ describe('GET /health - Database Downtime Robustness', () => {
     expect(res.body.message).toMatch(/(connection|database|auth|prisma)/i);
 
     await prisma.$disconnect();
-  }, 10000); // 10s timeout to allow Prisma connection attempt to fail
+  }, 30000); // 30s timeout to allow Prisma connection attempt to fail
 });

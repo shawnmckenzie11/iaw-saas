@@ -20,9 +20,12 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.45.0",
+    "@prisma/client": "^6.19.3",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.0.0",
     "concurrently": "^9.0.0",
     "dotenv": "^17.4.2",
+    "jsonwebtoken": "^9.0.3",
     "typescript": "^5.0.0"
   }
 }

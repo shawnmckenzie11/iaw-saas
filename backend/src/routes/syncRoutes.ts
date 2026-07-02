@@ -7,7 +7,10 @@ import { syncEventsBatch } from '../services/waybillService';
 import { prisma } from '../config/db';
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+});
 
 const UPLOAD_DIR = path.join(process.cwd(), 'uploads');
 
@@ -36,8 +39,10 @@ router.post('/events', requireAuth, async (req: Request, res: Response) => {
     return;
   }
 
+  const user = req.user || req.auth;
+
   try {
-    const syncedIds = await syncEventsBatch(events);
+    const syncedIds = await syncEventsBatch(events, user);
     res.json({ syncedIds });
   } catch (err) {
     const error = err as Error & { statusCode?: number };
@@ -51,7 +56,19 @@ router.post('/events', requireAuth, async (req: Request, res: Response) => {
 router.post(
   '/blobs',
   requireAuth,
-  upload.single('blob'),
+  (req: Request, res: Response, next) => {
+    upload.single('blob')(req, res, (err) => {
+      if (err) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          res.status(413).json({ error: 'File size limit exceeded (max 5MB)' });
+          return;
+        }
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      next();
+    });
+  },
   async (req: Request, res: Response) => {
     const { waybillNumber, fileType } = req.body;
 
@@ -65,6 +82,18 @@ router.post(
       return;
     }
 
+    const user = req.user || req.auth;
+    const record = await prisma.deliveryRecord.findUnique({ where: { waybillNumber } });
+
+    if (user?.role === 'DRIVER') {
+      if (record) {
+        if (!(record.driverId === null || record.driverId === user.driverId)) {
+          res.status(403).json({ error: 'Forbidden' });
+          return;
+        }
+      }
+    }
+
     ensureUploadDir();
     const ext = path.extname(req.file.originalname) || '.png';
     const filename = `${waybillNumber}-${fileType || 'file'}-${Date.now()}${ext}`;
@@ -73,7 +102,6 @@ router.post(
 
     const fileUri = `/uploads/${filename}`;
 
-    const record = await prisma.deliveryRecord.findUnique({ where: { waybillNumber } });
     if (record && fileType === 'signature') {
       await prisma.deliveryRecord.update({
         where: { waybillNumber },

@@ -56,6 +56,30 @@ describe('suggestionsGenerator', () => {
     expect(dropoffs['Wajax']).toEqual(['Komatsu (260)']);
   });
 
+  it('computeConditionalDropoffs excludes unmapped archive strings', () => {
+    const rows = [
+      makeRow('Komatsu (260)', 'UNKNOWN DEPOT XYZ'),
+      makeRow('Komatsu (260)', 'Wajax'),
+    ];
+
+    const dropoffs = computeConditionalDropoffs(rows);
+    expect(dropoffs['Komatsu (260)']).toEqual(['Wajax']);
+  });
+
+  it('computeConditionalDropoffs maps depot aliases to verified businesses', () => {
+    const rows = [
+      makeRow('Komatsu (260)', 'FED-EX DEPOT SUDBURY'),
+      makeRow('Komatsu (260)', 'PURO DEPOT'),
+      makeRow('Komatsu (260)', 'FED-EX DEPOT SUDBURY'),
+    ];
+
+    const dropoffs = computeConditionalDropoffs(rows);
+    expect(dropoffs['Komatsu (260)']).toEqual([
+      'Fed Ex Depot (new sudbury)',
+      'Puro Depot (Lively/Kelly Lake)',
+    ]);
+  });
+
   it('computeLocationAddresses picks the most frequent raw address', () => {
     const rows = [
       makeRow('Wajax', 'Toromont', '199 Mumford Rd', 'Toromont addr'),

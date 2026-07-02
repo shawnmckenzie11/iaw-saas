@@ -23,6 +23,11 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
     {
+      name: 'tier2',
+      testMatch: '**/tier2-*.spec.ts',
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
       name: 'walkthrough',
       testMatch: '**/walkthrough.spec.ts',
       use: { ...devices['Desktop Chrome'], video: 'on' },
