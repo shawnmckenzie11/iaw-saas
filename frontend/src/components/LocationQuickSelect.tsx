@@ -49,13 +49,13 @@ export default function LocationQuickSelect({
           </button>
         ))}
         {!hideMore && !showAllTrigger && (
-          <button type="button" className="quick-select-btn" onClick={onShowAll}>
+          <button type="button" className="quick-select-btn utility-chip" onClick={onShowAll}>
             More...
           </button>
         )}
         <button
           type="button"
-          className={isOther ? 'quick-select-btn active' : 'quick-select-btn'}
+          className={isOther ? 'quick-select-btn utility-chip active' : 'quick-select-btn utility-chip'}
           onClick={onOther}
         >
           Other

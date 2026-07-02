@@ -115,8 +115,18 @@ export default function App() {
     setScreen('dashboard');
   };
 
+  /**
+   * Toggles simulated network connectivity after user confirmation.
+   */
   const toggleNetwork = () => {
     const next = !isOnline;
+    const confirmed = window.confirm(
+      next
+        ? 'Switch to Live mode? Pending sync items will upload when connected.'
+        : 'Switch to Off mode? Sync will pause until you turn Live back on.'
+    );
+    if (!confirmed) return;
+
     setIsOnline(next);
     persistNetworkOnline(next);
     syncManager.setNetworkConnected(next);

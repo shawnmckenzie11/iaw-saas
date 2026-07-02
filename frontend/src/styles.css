@@ -807,6 +807,18 @@ body {
   font-weight: 700;
 }
 
+.quick-select-btn.utility-chip {
+  background: #ffd60a;
+  color: #3d3200;
+  font-weight: 700;
+}
+
+.quick-select-btn.utility-chip.active {
+  background: #e6c200;
+  color: #1f1900;
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.12);
+}
+
 .other-search-block {
   margin-top: 8px;
 }
