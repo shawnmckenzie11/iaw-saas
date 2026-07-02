@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AuthSession } from '../services/auth';
+import { notifyDriverRosterChanged } from '../services/driverRoster';
 import type { Waybill } from '../types/waybill';
 import { waybillPrice } from '../types/waybill';
 import { printInvoicePdf } from '../utils/invoicePrint';
@@ -266,6 +267,7 @@ export default function AccountingPage({ session, waybills, onBack }: Accounting
       setEditingEmployeeId(null);
       setEmployeeDraft(EMPTY_EMPLOYEE_DRAFT);
       await loadEmployees();
+      notifyDriverRosterChanged();
     } catch (err) {
       setPayrollError(err instanceof Error ? err.message : 'Failed to save employee');
     }
@@ -287,6 +289,7 @@ export default function AccountingPage({ session, waybills, onBack }: Accounting
         throw new Error('Failed to delete employee');
       }
       await loadEmployees();
+      notifyDriverRosterChanged();
     } catch (err) {
       setPayrollError(err instanceof Error ? err.message : 'Failed to delete employee');
     }

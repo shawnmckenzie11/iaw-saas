@@ -1,56 +1,117 @@
-# IAW Courier: Admin & Dispatcher Operations Guide
+# IAW Courier PWA — Dispatcher Instructions
 
-This guide explains how dispatchers and system administrators manage the backend operations, synchronization conflicts, and route rate adjustments.
-
----
-
-## 🗺️ 1. Managing Route Rates (Tier 1 Pricing)
-
-Flat-rate billing for common corporate routes is managed via the `route_rates` table. This allows rates to be adjusted dynamically without code deployments.
-
-### How Tier 1 Rates Work
-* When a driver logs a pickup, the system checks the `route_rates` table for a record matching the pickup `origin` and dropoff `destination`.
-* If a match is found, the system applies the rate with the most recent `effective_date`.
-* To adjust a flat rate, you insert a new record into the `route_rates` table:
-  ```sql
-  INSERT INTO route_rates (origin, destination, flat_rate, effective_date)
-  VALUES ('ORIGIN_SITE', 'DEST_SITE', 55.00, '2026-07-01 00:00:00-04');
-  ```
-* All deliveries scheduled after that `effective_date` will automatically receive the new flat rate, while historical deliveries retain their original rates for auditing.
+This guide covers dispatcher operations in the **React PWA**: dispatch dashboard, driver preview, pricing, accounting/payroll, and sync conflict handling.
 
 ---
 
-## 💰 2. Manual Adjustments & Custom Tiers
+## 1. Sign In
 
-Some deliveries do not match pre-configured Tier 1 flat routes. These are handled as follows:
-
-* **TIER 2 (Standard In-Town - Non-Flat)**: Placed at the configured default in-town rate. Dispatchers can inspect these in the dashboard and adjust the `pricing_total_cost` base rate as needed.
-* **TIER 3 (Out-of-Town)**: Calculated manually. The driver captures the route details, and the dispatcher inputs the custom cost parameters into the billing records.
-* **Tracking Overrides**: If you manually adjust a delivery's cost, ensure the system flags `pricing_is_manually_adjusted = TRUE` and documents the change in `pricing_override_reason` (e.g. "Heavy weather delay surcharge").
+1. Open the app and select the **Dispatcher** tab on the login screen.
+2. Enter your **email** and **password**.
+3. Tap **Sign In** to open the **Dispatch** dashboard.
 
 ---
 
-## ⚡ 3. Handling Synchronization Conflicts
+## 2. Dispatch Dashboard Tabs
 
-If a driver's mobile device attempts to sync a delivery that collisions with database records (e.g., duplicate waybill number or server key mismatch):
+| Tab | Contents |
+|-----|----------|
+| **Active Jobs** | DRAFT and PICKED_UP waybills — assign drivers, void/delete |
+| **Pending Price (n)** | DELIVERED jobs missing a price quote |
+| **Completed (n)** | DELIVERED jobs with a stored or auto-rated price |
 
-1. The record's `sync_status` shifts to `CONFLICT` and a red conflict warning badge surfaces on the app's dashboard logs.
-2. **Reviewing the Collision**:
-   * Inspect the conflict description under the driver's log list.
-   * Coordinate with the driver to verify if the details were entered twice or if they are matching an existing logged waybill.
-3. **Resolving the Conflict**:
-   * If the record was a duplicate click, the dispatcher can safely archive/void the record.
-   * If the record contains unique delivery data but has a wrong waybill number, adjust the waybill number in the dispatcher UI or ask the driver to hit **RETRY FORCE** to trigger a re-transmission.
+The dashboard polls for updates every ~12 seconds while online.
+
+### Header controls
+
+- **➕ NEW PICKUP (WAYBILL)** — create a dispatch-initiated pickup.
+- **👤 Driver View** — read-only preview of a selected driver's queue.
+- **📊 ACCOUNTING & INVOICES** — monthly invoices and payroll employees.
+- **Sync counters** — same S/C/Pending Sync badges as the driver portal.
 
 ---
 
-## 💼 4. QuickBooks Online Integration Audit
+## 3. Assigning Drivers
 
-Deliveries marked `DELIVERED` are matched to client files and prepared for sync to QuickBooks.
+On **Active Jobs**, each row has **driver assignment chips** (first initial of each active driver). Names come from the live **Payroll** roster — not hardcoded labels.
 
-* **Audit Mappings**:
-  * Every customer record must have a valid `qbo_customer_id` matching your QuickBooks Online client list.
-  * Invoices synced successfully will lock the transaction record with `qbo_sync_status = SYNCED` and save the QuickBooks Invoice reference key in `qbo_invoice_id`.
-* **QBO Sync Failures**:
-  * Mismatches or OAuth connection dropouts will result in `qbo_sync_status = FAILED` and write the API error details into `qbo_sync_error`.
-  * Resolve customer name typos or mapping IDs in the database, then select "Re-Sync Invoice" on the Admin Dashboard to retry the sync.
+1. Tap a driver chip to open the assignment modal.
+2. Choose **Regular** or **Rush** priority and queue position (top, after a job, or bottom).
+3. Tap **Confirm Assignment**.
+4. Tap **X** beside the chips to unassign.
+
+Driver names update automatically after payroll edits (Accounting → Payroll tab).
+
+---
+
+## 4. Pending Price Workflow
+
+Deliveries that could not be auto-rated appear under **Pending Price**, grouped into **Today's** and **Unassigned** sections.
+
+1. Click a row to open the detail modal.
+2. Enter a **quote price** and tap **Confirm Price**, or tap **Edit** to fix pickup/dropoff/cargo first.
+3. Priced jobs move to the **Completed** tab.
+
+---
+
+## 5. Completed Deliveries
+
+The **Completed** tab supports search and date filters. Click a row to open the detail modal:
+
+- **Print** / **Email** — generate a receipt (email uses configured business address).
+- **Edit** — correct pickup, dropoff, cargo, or price via dispatcher correction events.
+- **Delete** — void the waybill (removed from all dispatch lists).
+
+Capture icons (✍️ / 📷) indicate signature and proof photo availability.
+
+---
+
+## 6. Void / Delete Active Jobs
+
+On **Active Jobs**, use the **🗑** icon in the far-right column for DRAFT or PICKED_UP rows. Confirm in the dialog — this emits a `WAYBILL_VOIDED` event.
+
+---
+
+## 7. Accounting & Payroll
+
+Open **📊 ACCOUNTING & INVOICES**:
+
+### Invoices tab
+
+- Pick a billing month, select customers, generate monthly statements.
+- Print/view PDF via browser print.
+- Update invoice status (Draft → Sent → Paid / Void).
+
+### Payroll tab
+
+- **Add / Edit / Delete** employees via `/api/admin/employees`.
+- Link employees to driver ids (`drv-01`, etc.) for roster sync.
+- Name changes propagate to dispatch assignment chips and **Driver View** automatically.
+
+---
+
+## 8. Sync Conflicts
+
+When a red **CONFLICT** badge appears:
+
+1. Read the banner message on the dashboard.
+2. Verify with the driver whether the entry is a duplicate.
+3. Tap **Retry** to force resubmit, or void the duplicate from dispatch.
+
+---
+
+## 9. Driver Preview
+
+1. Tap **👤 Driver View** and pick a driver.
+2. Review their filtered queue (read-only).
+3. Tap **← Back to Dispatch** to return.
+
+Use this to verify assignments and queue order without signing in as the driver.
+
+---
+
+## 10. Edge Cases
+
+- **INVOICED** waybills are locked — corrections and voids return HTTP 422.
+- **Google Sheets intake** rows show a **LIVE FORM** badge; they arrive as unassigned DRAFT jobs.
+- Drivers cannot see prices, void jobs, or submit dispatcher-only events (RBAC enforced server-side).

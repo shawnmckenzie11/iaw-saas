@@ -1,6 +1,6 @@
 import type { Waybill } from '../types/waybill';
 import { waybillPrice } from '../types/waybill';
-import { driverFirstName } from '../data/drivers';
+import { driverFirstNameFromRoster, getDriverRoster } from '../services/driverRoster';
 import { getLocationShortName } from './pricing';
 
 /**
@@ -125,7 +125,7 @@ export function buildWaybillPrintHtml(waybill: Waybill): string {
   <div class="detail-grid">
     <div>
       <label>Driver</label>
-      <p>${driverFirstName(waybill.driverId)}</p>
+      <p>${driverFirstNameFromRoster(waybill.driverId, getDriverRoster())}</p>
     </div>
     <div>
       <label>Status</label>

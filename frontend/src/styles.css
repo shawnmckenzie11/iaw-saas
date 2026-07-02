@@ -1773,6 +1773,42 @@ body {
   color: var(--muted);
 }
 
+.waybill-edit-form,
+.pending-price-quote-label {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.waybill-edit-form label,
+.pending-price-quote-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.waybill-edit-form input,
+.pending-price-quote-label input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.delete-confirm-inline {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.delete-confirm-inline p {
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+
 .completed-waybill-previews {
   display: grid;
   grid-template-columns: 1fr 1fr;

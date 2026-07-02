@@ -1,4 +1,4 @@
-/** Synthetic driver roster used for dispatch assignment chips and table labels. */
+/** Fallback driver roster when the admin API is unavailable (offline bootstrap). */
 export const DRIVERS = [
   { id: 'drv-01', firstName: 'Driver', lastName: 'One', qboDriverId: '101' },
   { id: 'drv-02', firstName: 'Driver', lastName: 'Two', qboDriverId: '102' },
@@ -7,7 +7,8 @@ export const DRIVERS = [
 ] as const;
 
 /**
- * Returns the display first name for a driver id, or a fallback label.
+ * @deprecated Use driverFirstNameFromRoster from ../services/driverRoster instead.
+ * Returns the display first name for a driver id using the static fallback roster.
  */
 export function driverFirstName(driverId: string | null | undefined): string {
   if (!driverId) return 'Unassigned';

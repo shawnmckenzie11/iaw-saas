@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { iawDb, queueEvent, removeSyncedEvents } from '../db/indexedDb';
 import { FALLBACK_WAYBILLS } from '../data/fallbackWaybills';
-import { DRIVERS, driverFirstName } from '../data/drivers';
+import {
+  DRIVER_ROSTER_CHANGED_EVENT,
+  driverFirstNameFromRoster,
+  fetchDriverRoster,
+  getDriverRoster,
+  type DriverRosterEntry,
+} from '../services/driverRoster';
 import type { AuthSession } from '../services/auth';
 import { syncManager, type SyncStats } from '../services/SyncManager';
 import type { Waybill } from '../types/waybill';
@@ -17,7 +23,7 @@ import {
   sortDriverDeliveryQueue,
 } from '../utils/waybillSort';
 import { APP_BUILD } from '../config/appBuild';
-import CompletedWaybillModal from '../components/CompletedWaybillModal';
+import WaybillDetailModal, { type WaybillEditDraft } from '../components/WaybillDetailModal';
 import { hasPendingDropoff } from '../utils/pendingDropoff';
 
 export type { Waybill };
@@ -50,19 +56,21 @@ interface DashboardProps {
  */
 function DispatchAssignmentCell({
   wb,
+  drivers,
   onAssignClick,
 }: {
   wb: Waybill;
+  drivers: DriverRosterEntry[];
   onAssignClick: (driverId: string) => void;
 }) {
   if (wb.status === 'DELIVERED') {
-    return <span className="driver-chip-label">{driverFirstName(wb.driverId)}</span>;
+    return <span className="driver-chip-label">{driverFirstNameFromRoster(wb.driverId, drivers)}</span>;
   }
 
   return (
     <div className="assigned-row">
       <div className="driver-assign-chips">
-        {DRIVERS.map((driver) => (
+        {drivers.map((driver) => (
           <button
             key={driver.id}
             type="button"
@@ -143,7 +151,7 @@ export default function DashboardPage({
   const [completedDetailWaybill, setCompletedDetailWaybill] = useState<Waybill | null>(null);
   const [pendingPriceWaybill, setPendingPriceWaybill] = useState<Waybill | null>(null);
   const [deliverConfirmWaybill, setDeliverConfirmWaybill] = useState<Waybill | null>(null);
-  const [quotePrice, setQuotePrice] = useState('');
+  const [driverRoster, setDriverRoster] = useState<DriverRosterEntry[]>(() => getDriverRoster());
   const [conflictEvents, setConflictEvents] = useState<Array<{ id: string; waybillNumber: string }>>([]);
   const [assignModalWaybill, setAssignModalWaybill] = useState<Waybill | null>(null);
   const [assignDraft, setAssignDraft] = useState<AssignmentDraft | null>(null);
@@ -160,7 +168,28 @@ export default function DashboardPage({
   const isDriverPreview = isDispatcher && driverPreviewId !== null;
   const showDriverPortal = !isDispatcher || isDriverPreview;
   const hideDriverPricing = session.role === 'DRIVER';
-  const previewDriverName = driverPreviewId ? driverFirstName(driverPreviewId) : null;
+  const previewDriverName = driverPreviewId
+    ? driverFirstNameFromRoster(driverPreviewId, driverRoster)
+    : null;
+
+  /**
+   * Loads the active driver roster from the admin API (dispatcher only).
+   */
+  const loadDriverRoster = async () => {
+    if (!isDispatcher || !session.token) return;
+    const roster = await fetchDriverRoster(session.token);
+    setDriverRoster(roster);
+  };
+
+  useEffect(() => {
+    void loadDriverRoster();
+  }, [isDispatcher, session.token]);
+
+  useEffect(() => {
+    const onRosterChanged = () => void loadDriverRoster();
+    window.addEventListener(DRIVER_ROSTER_CHANGED_EVENT, onRosterChanged);
+    return () => window.removeEventListener(DRIVER_ROSTER_CHANGED_EVENT, onRosterChanged);
+  }, [isDispatcher, session.token]);
 
   useEffect(() => {
     syncManager.refresh();
@@ -344,50 +373,90 @@ export default function DashboardPage({
   };
 
   /**
-   * Saves a dispatcher manual price quote via override event.
+   * Saves dispatcher corrections and optional price via event-sourced API calls.
    */
-  const handleConfirmQuotePrice = async () => {
-    if (!pendingPriceWaybill || !quotePrice.trim()) return;
-    const priceVal = parseFloat(quotePrice);
-    if (Number.isNaN(priceVal) || priceVal < 0) return;
+  const handleWaybillDetailSave = async (wb: Waybill, draft: WaybillEditDraft) => {
+    const correctionData: Record<string, unknown> = {};
+    if (draft.pickupLocationName.trim() !== wb.pickupLocationName) {
+      correctionData.pickupLocationName = draft.pickupLocationName.trim();
+    }
+    if (draft.pickupAddress.trim() !== (wb.pickupAddress ?? wb.pickupLocationName)) {
+      correctionData.pickupAddress = draft.pickupAddress.trim();
+    }
+    if (draft.dropoffDestinationName.trim() !== wb.dropoffDestinationName) {
+      correctionData.dropoffDestinationName = draft.dropoffDestinationName.trim();
+    }
+    if (draft.dropoffAddress.trim() !== (wb.dropoffAddress ?? wb.dropoffDestinationName)) {
+      correctionData.dropoffAddress = draft.dropoffAddress.trim();
+    }
+    if (draft.parcelDescription.trim() !== wb.parcelDescription) {
+      correctionData.parcelDescription = draft.parcelDescription.trim();
+    }
 
-    try {
-      await fetch(`/api/waybills/${pendingPriceWaybill.waybillNumber}/events`, {
+    const priceVal = draft.pricingTotalCost.trim() ? parseFloat(draft.pricingTotalCost) : NaN;
+    const hasPrice = !Number.isNaN(priceVal) && priceVal >= 0;
+    const storedPrice = effectiveWaybillPrice(wb);
+    const priceChanged = hasPrice && priceVal !== storedPrice;
+
+    if (priceChanged) {
+      correctionData.pricingTotalCost = priceVal;
+    }
+
+    if (Object.keys(correctionData).length > 0) {
+      const eventType =
+        Object.keys(correctionData).length === 1 && priceChanged && correctionData.pricingTotalCost !== undefined
+          ? 'DISPATCHER_OVERRIDE'
+          : 'DISPATCHER_CORRECTION';
+
+      await fetch(`/api/waybills/${wb.waybillNumber}/events`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.token}`,
         },
         body: JSON.stringify({
-          eventType: 'DISPATCHER_OVERRIDE',
-          data: { pricingTotalCost: priceVal },
+          eventType,
+          data: correctionData,
         }),
-      });
-      setWaybills((prev) => {
-        const next = prev.map((row) =>
-          row.waybillNumber === pendingPriceWaybill.waybillNumber
-            ? { ...row, calculatedPrice: priceVal, pricingTotalCost: priceVal }
-            : row
-        );
-        sessionStorage.setItem('iaw_waybills', JSON.stringify(next));
-        return next;
-      });
-    } catch {
-      // offline placeholder update
-      setWaybills((prev) => {
-        const next = prev.map((row) =>
-          row.waybillNumber === pendingPriceWaybill.waybillNumber
-            ? { ...row, calculatedPrice: priceVal, pricingTotalCost: priceVal }
-            : row
-        );
-        sessionStorage.setItem('iaw_waybills', JSON.stringify(next));
-        return next;
       });
     }
 
+    await loadWaybills();
+    setCompletedDetailWaybill(null);
     setPendingPriceWaybill(null);
-    setQuotePrice('');
-    setDispatchTab('COMPLETED');
+    if (hasPrice && wb.status === 'DELIVERED' && effectiveWaybillPrice(wb) <= 0) {
+      setDispatchTab('COMPLETED');
+    }
+  };
+
+  /**
+   * Voids a waybill from pending-price or completed modals (dispatcher only).
+   */
+  const handleWaybillDetailDelete = async (wb: Waybill) => {
+    const res = await fetch(`/api/waybills/${wb.waybillNumber}/events`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.token}`,
+      },
+      body: JSON.stringify({
+        eventType: 'WAYBILL_VOIDED',
+        data: {},
+      }),
+    });
+
+    if (res.ok) {
+      setWaybills((prev) => {
+        const next = prev.filter((row) => row.waybillNumber !== wb.waybillNumber);
+        sessionStorage.setItem('iaw_waybills', JSON.stringify(next));
+        return next;
+      });
+    } else {
+      await loadWaybills();
+    }
+
+    setCompletedDetailWaybill(null);
+    setPendingPriceWaybill(null);
   };
 
   /**
@@ -627,7 +696,8 @@ export default function DashboardPage({
     setDeleteConfirmWaybill(null);
   };
 
-  const assignDriverName = DRIVERS.find((d) => d.id === assignDraft?.driverId)?.firstName ?? 'Driver';
+  const assignDriverName =
+    driverRoster.find((d) => d.id === assignDraft?.driverId)?.firstName ?? 'Driver';
 
   const showDispatchDeleteCol =
     isDispatcher && !isDriverPreview && dispatchTab === 'ACTIVE';
@@ -722,7 +792,6 @@ export default function DashboardPage({
           }
           if (isDispatcher && !isDriverPreview && dispatchTab === 'PENDING_PRICE') {
             setPendingPriceWaybill(wb);
-            setQuotePrice('');
             return;
           }
           if (showDriverAction) {
@@ -791,6 +860,7 @@ export default function DashboardPage({
           {isDispatcher && !isDriverPreview ? (
             <DispatchAssignmentCell
               wb={wb}
+              drivers={driverRoster}
               onAssignClick={(driverId) => openAssignModal(wb, driverId)}
             />
           ) : showDriverAction ? (
@@ -919,7 +989,7 @@ export default function DashboardPage({
                 </button>
                 {showDriverPicker && (
                   <div className="driver-preview-menu">
-                    {DRIVERS.map((driver) => (
+                    {driverRoster.map((driver) => (
                       <button
                         key={driver.id}
                         type="button"
@@ -1095,9 +1165,24 @@ export default function DashboardPage({
       )}
 
       {completedDetailWaybill && (
-        <CompletedWaybillModal
+        <WaybillDetailModal
           waybill={completedDetailWaybill}
+          mode="completed"
+          driverRoster={driverRoster}
           onClose={() => setCompletedDetailWaybill(null)}
+          onSave={(draft) => handleWaybillDetailSave(completedDetailWaybill, draft)}
+          onDelete={() => handleWaybillDetailDelete(completedDetailWaybill)}
+        />
+      )}
+
+      {pendingPriceWaybill && (
+        <WaybillDetailModal
+          waybill={pendingPriceWaybill}
+          mode="pending-price"
+          driverRoster={driverRoster}
+          onClose={() => setPendingPriceWaybill(null)}
+          onSave={(draft) => handleWaybillDetailSave(pendingPriceWaybill, draft)}
+          onDelete={() => handleWaybillDetailDelete(pendingPriceWaybill)}
         />
       )}
 
@@ -1213,47 +1298,6 @@ export default function DashboardPage({
               </button>
               <button type="button" className="btn-primary" onClick={() => void handleConfirmAssignment()}>
                 Confirm Assignment
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {pendingPriceWaybill && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <h3>Set Dispatcher Price Quote</h3>
-            <div className="modal-details">
-              <div>Waybill #: {pendingPriceWaybill.waybillNumber}</div>
-              <div>From: {pendingPriceWaybill.pickupLocationName}</div>
-              <div>To: {pendingPriceWaybill.dropoffDestinationName}</div>
-              <div>Cargo: {pendingPriceWaybill.parcelDescription}</div>
-            </div>
-            <label>Enter Quote Price ($) *</label>
-            <input
-              value={quotePrice}
-              onChange={(e) => setQuotePrice(e.target.value)}
-              placeholder="e.g. 75.00"
-              autoFocus
-            />
-            <div className="modal-actions">
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => {
-                  setPendingPriceWaybill(null);
-                  setQuotePrice('');
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="btn-primary"
-                disabled={!quotePrice.trim()}
-                onClick={() => void handleConfirmQuotePrice()}
-              >
-                Confirm Price
               </button>
             </div>
           </div>

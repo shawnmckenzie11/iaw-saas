@@ -110,6 +110,22 @@ function parseEmployeeBody(body: Record<string, unknown>, partial: boolean) {
   return { data, errors };
 }
 
+/**
+ * Keeps linked Driver display names in sync when payroll employee records change.
+ */
+async function syncLinkedDriverNames(
+  driverId: string | null | undefined,
+  firstName: string,
+  lastName: string
+): Promise<void> {
+  if (!driverId) return;
+
+  await prisma.driver.updateMany({
+    where: { id: driverId },
+    data: { firstName, lastName },
+  });
+}
+
 router.use(requireAuth, requireRole('DISPATCHER'));
 
 /**
@@ -145,6 +161,8 @@ router.post('/', async (req: Request, res: Response) => {
     },
   });
 
+  await syncLinkedDriverNames(employee.driverId, employee.firstName, employee.lastName);
+
   res.status(201).json(serializeEmployee(employee));
 });
 
@@ -168,6 +186,8 @@ router.put('/:id', async (req: Request, res: Response) => {
     where: { id: req.params.id },
     data,
   });
+
+  await syncLinkedDriverNames(employee.driverId, employee.firstName, employee.lastName);
 
   res.json(serializeEmployee(employee));
 });

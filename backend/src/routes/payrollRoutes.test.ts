@@ -102,6 +102,36 @@ describe('Payroll Employee API', () => {
     expect(res.body.active).toBe(false);
   });
 
+  it('syncs linked driver names when employee with driverId is updated', async () => {
+    const testCreds = loadTestCredentials();
+    const driverId = 'drv-01';
+
+    const employee = await prisma.employee.findFirst({ where: { driverId } });
+    expect(employee).toBeTruthy();
+
+    const res = await request(app)
+      .put(`/api/admin/employees/${employee!.id}`)
+      .set('Authorization', `Bearer ${dispatcherToken}`)
+      .send({
+        firstName: 'Synced',
+        lastName: 'DriverName',
+      });
+
+    expect(res.status).toBe(200);
+
+    const driver = await prisma.driver.findUnique({ where: { id: driverId } });
+    expect(driver?.firstName).toBe('Synced');
+    expect(driver?.lastName).toBe('DriverName');
+
+    await request(app)
+      .put(`/api/admin/employees/${employee!.id}`)
+      .set('Authorization', `Bearer ${dispatcherToken}`)
+      .send({
+        firstName: employee!.firstName,
+        lastName: employee!.lastName,
+      });
+  });
+
   it('deletes an employee record', async () => {
     const res = await request(app)
       .delete(`/api/admin/employees/${createdEmployeeId}`)

@@ -19,7 +19,13 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
+      testIgnore: ['**/walkthrough.spec.ts', '**/tier2-*.spec.ts'],
       use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'walkthrough',
+      testMatch: '**/walkthrough.spec.ts',
+      use: { ...devices['Desktop Chrome'], video: 'on' },
     },
   ],
   webServer: [

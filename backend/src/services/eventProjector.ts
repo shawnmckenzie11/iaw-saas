@@ -7,7 +7,7 @@ const VALID_TRANSITIONS: Record<string, DeliveryStatus[]> = {
   WAYBILL_ASSIGNED: ['DRAFT', 'PICKED_UP'],
   WAYBILL_PICKED_UP: ['DRAFT', 'PICKED_UP'],
   WAYBILL_DELIVERED: ['PICKED_UP', 'DELIVERED'],
-  WAYBILL_VOIDED: ['DRAFT', 'PICKED_UP'],
+  WAYBILL_VOIDED: ['DRAFT', 'PICKED_UP', 'DELIVERED'],
   DISPATCHER_OVERRIDE: ['DRAFT', 'PICKED_UP', 'DELIVERED', 'INVOICED'],
   DISPATCHER_CORRECTION: ['DRAFT', 'PICKED_UP', 'DELIVERED', 'INVOICED'],
 };
@@ -45,10 +45,10 @@ export function validateStatusTransition(
   }
 
   if (eventType === 'WAYBILL_VOIDED') {
-    if (currentStatus !== 'DRAFT' && currentStatus !== 'PICKED_UP') {
+    if (currentStatus !== 'DRAFT' && currentStatus !== 'PICKED_UP' && currentStatus !== 'DELIVERED') {
       return {
         valid: false,
-        error: 'Invalid status transition: WAYBILL_VOIDED requires DRAFT or PICKED_UP state',
+        error: 'Invalid status transition: WAYBILL_VOIDED requires DRAFT, PICKED_UP, or DELIVERED state',
       };
     }
   }
@@ -195,11 +195,24 @@ export function projectEventOntoRecord(
       }
       break;
     case 'DISPATCHER_CORRECTION':
+      if (typeof data.pickupLocationName === 'string') {
+        update.pickupLocationName = data.pickupLocationName;
+      }
       if (typeof data.pickupAddress === 'string') {
         update.pickupAddress = data.pickupAddress;
       }
+      if (typeof data.dropoffDestinationName === 'string') {
+        update.dropoffDestinationName = data.dropoffDestinationName;
+      }
       if (typeof data.dropoffAddress === 'string') {
         update.dropoffAddress = data.dropoffAddress;
+      }
+      if (typeof data.parcelDescription === 'string') {
+        update.parcelDescription = data.parcelDescription;
+      }
+      if (typeof data.pricingTotalCost === 'number') {
+        update.pricingTotalCost = data.pricingTotalCost;
+        update.pricingIsManuallyAdjusted = true;
       }
       break;
     default:

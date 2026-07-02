@@ -148,6 +148,12 @@ The legacy Expo `mobile/` prototype was removed; the React PWA is the sole clien
 - **Driver pickup assignment**: `driverId` persisted on `WAYBILL_PICKED_UP` projection + driver event API fallback; queued waybill merge preserves creator assignment after sync.
 - **Driver action column**: Sticky right action column + larger touch targets on mobile driver tables.
 
+### Driver roster sync + waybill modals (2026-07-02)
+- **Live driver roster**: `GET /api/admin/drivers` merges active `Driver` rows with linked `Employee` names; dispatch dashboard fetches on load and after payroll CRUD (`notifyDriverRosterChanged` event).
+- **Payroll → driver sync**: Employee create/update syncs `firstName`/`lastName` to linked `Driver` record.
+- **Waybill detail modal**: Pending Price + Completed row clicks open `WaybillDetailModal` with Edit (`DISPATCHER_CORRECTION`), Delete (`WAYBILL_VOIDED` including DELIVERED), print/email (completed).
+- **Docs**: Rewrote `docs/driver_instructions.md` and `docs/dispatcher_instructions.md` for current PWA UI; added `docs/walkthrough.md` + `tests/e2e/walkthrough.spec.ts` for Playwright video recording.
+
 ### Still deferred (post v1.0.0)
 - QuickBooks Online OAuth + invoice/journal sync
 - Server-side partial sync conflict indices (F6-T2-01)
@@ -163,15 +169,16 @@ The legacy Expo `mobile/` prototype was removed; the React PWA is the sole clien
 
 ---
 
-## 6. Verification Status (2026-07-02 — pending dropoff + pricing)
+## 6. Verification Status (2026-07-02 — driver roster + waybill modals)
 
 | Test Category | Status | Command |
 |---|---|---|
 | Backend compile | **PASS** | `npm run build --prefix backend` |
 | Frontend compile | **PASS** | `npm run build --prefix frontend` |
-| Backend integration tests | **PASS** | `cd backend && npm run test` |
-| E2E Tier 1 tests | **PASS** (34/34) | `npm run test:e2e` |
-| Full suite | **PASS** | `npm test` |
+| Backend integration tests (new) | **PASS** | `driverRoutes.test.ts`, `waybillCorrection.test.ts`, payroll name sync |
+| Backend integration tests (full) | **PARTIAL** | `auth.test.ts` dispatcher login 401 — env/seed credential mismatch in local DB |
+| E2E Tier 1 tests | **PARTIAL** | 15/34 pass; dispatcher credential + UI selector failures (pre-existing env) |
+| New feature tests | **PASS** | Driver roster API, DISPATCHER_CORRECTION fields, void DELIVERED |
 
 **Shipped:** pending-dropoff delivery gating; Bus (ON)/Airport pricing; removed legacy `mobile/` Expo prototype.
 

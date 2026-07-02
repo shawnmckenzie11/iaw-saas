@@ -1,7 +1,7 @@
 import { IAW_BUSINESS_EMAIL } from '../config/businessContact';
 import type { Waybill } from '../types/waybill';
 import { waybillPrice } from '../types/waybill';
-import { driverFirstName } from '../data/drivers';
+import { driverFirstNameFromRoster, getDriverRoster } from '../services/driverRoster';
 import { getLocationShortName } from './pricing';
 
 /**
@@ -20,7 +20,7 @@ export function buildWaybillMailtoUrl(waybill: Waybill): string {
     '',
     `Waybill #: ${waybill.waybillNumber}`,
     `Date: ${formattedDate}`,
-    `Driver: ${driverFirstName(waybill.driverId)}`,
+    `Driver: ${driverFirstNameFromRoster(waybill.driverId, getDriverRoster())}`,
     `Route: ${getLocationShortName(waybill.pickupLocationName)} → ${getLocationShortName(waybill.dropoffDestinationName)}`,
     `Pickup: ${waybill.pickupLocationName}`,
     `Dropoff: ${waybill.dropoffDestinationName}`,
