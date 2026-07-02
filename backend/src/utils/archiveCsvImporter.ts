@@ -70,9 +70,9 @@ export function readArchiveCsv(csvPath?: string): ParsedArchiveRow[] {
 }
 
 /**
- * Returns the six most frequent pickup locations within the trailing window.
+ * Returns the most frequent pickup locations within the trailing window (default top 10).
  */
-export function computeTopPickups(rows: ParsedArchiveRow[], windowDays = 365, limit = 6): string[] {
+export function computeTopPickups(rows: ParsedArchiveRow[], windowDays = 365, limit = 10): string[] {
   if (rows.length === 0) return VERIFIED_BUSINESSES.slice(0, limit);
 
   const newest = rows[0]?.timestamp ?? new Date();

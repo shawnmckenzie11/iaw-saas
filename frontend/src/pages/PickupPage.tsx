@@ -4,8 +4,12 @@ import { queueEvent } from '../db/indexedDb';
 import {
   TOP_PICKUPS,
   addressForLocation,
+  allRegisteredDropoffs,
   coordsForLocation,
   locationSuggestions,
+  quickDropoffOptions,
+  quickPickupOptions,
+  rankedRegisteredDropoffs,
 } from '../data/locationSuggestions';
 import type { AuthSession } from '../services/auth';
 import { syncManager } from '../services/SyncManager';
@@ -77,22 +81,33 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
     [dropoffDestination, finalWeight, pickupLocation, priority, skidRequired]
   );
 
-  const filteredQuickPickups = useMemo(
-    () => locationSuggestions.commonPickups.filter((name) => TOP_PICKUPS.includes(name)),
-    []
+  const quickPickups = useMemo(
+    () => quickPickupOptions(TOP_PICKUPS, locationSuggestions.commonPickups, showAllPickups),
+    [showAllPickups]
   );
-  const quickPickups = showAllPickups || filteredQuickPickups.length === 0
-    ? locationSuggestions.commonPickups
-    : filteredQuickPickups;
 
-  const baseDropoffs = selectedPickupKey && locationSuggestions.conditionalDropoffs[selectedPickupKey]
-    ? locationSuggestions.conditionalDropoffs[selectedPickupKey]
-    : locationSuggestions.commonPickups.filter((name) => name !== pickupLocation);
+  const registeredBusinesses = locationSuggestions.commonPickups;
 
-  const filteredQuickDropoffs = baseDropoffs.filter((name) => TOP_PICKUPS.includes(name));
-  const quickDropoffs = showAllDropoffs || filteredQuickDropoffs.length === 0
-    ? baseDropoffs
-    : filteredQuickDropoffs;
+  const allDropoffOptions = useMemo(
+    () => allRegisteredDropoffs(registeredBusinesses, pickupLocation),
+    [registeredBusinesses, pickupLocation]
+  );
+
+  const rankedDropoffs = useMemo(
+    () =>
+      rankedRegisteredDropoffs(
+        selectedPickupKey,
+        locationSuggestions.conditionalDropoffs,
+        registeredBusinesses,
+        pickupLocation
+      ),
+    [selectedPickupKey, registeredBusinesses, pickupLocation]
+  );
+
+  const quickDropoffs = useMemo(
+    () => quickDropoffOptions(rankedDropoffs, allDropoffOptions, showAllDropoffs),
+    [rankedDropoffs, allDropoffOptions, showAllDropoffs]
+  );
 
   /**
    * Hydrates wizard fields when continuing a dispatch-created pending pickup.
@@ -168,6 +183,7 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
     const address = addressForLocation(name);
     if (address) setPickupAddress(address);
     setSelectedPickupKey(name);
+    setShowAllDropoffs(false);
     setDropoffDestination('');
     setDropoffAddress('');
     setDropoffIsOther(false);
@@ -660,7 +676,7 @@ export default function PickupPage({ session, isOnline, editWaybill = null, onBa
           <LocationQuickSelect
             label="Quick Select Dropoff Destination:"
             quickOptions={quickDropoffs}
-            fullOptions={baseDropoffs}
+            fullOptions={allDropoffOptions}
             selected={dropoffDestination}
             isOther={dropoffIsOther}
             showAll={showAllDropoffs}

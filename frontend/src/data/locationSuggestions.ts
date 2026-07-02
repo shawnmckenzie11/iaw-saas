@@ -1,5 +1,14 @@
 import topPickupsData from './topPickups.json';
 import baselineSuggestions from './suggestions.json';
+import { QUICK_SELECT_LIMIT, quickDropoffOptions, quickPickupOptions } from './quickSelectOptions';
+
+export {
+  QUICK_SELECT_LIMIT,
+  allRegisteredDropoffs,
+  quickDropoffOptions,
+  quickPickupOptions,
+  rankedRegisteredDropoffs,
+} from './quickSelectOptions';
 
 export interface LocationDetail {
   address: string;
@@ -49,11 +58,16 @@ export async function hydrateLocationSuggestions(): Promise<void> {
  * Returns dropoff suggestions for a selected pickup location.
  */
 export function dropoffsForPickup(pickupName: string): string[] {
-  if (!pickupName) return locationSuggestions.commonPickups;
-  return (
-    locationSuggestions.conditionalDropoffs[pickupName] ??
-    locationSuggestions.commonPickups.filter((name) => name !== pickupName)
-  );
+  const registered = locationSuggestions.commonPickups;
+  if (!pickupName) return registered;
+
+  const conditional = locationSuggestions.conditionalDropoffs[pickupName];
+  if (!conditional) {
+    return registered.filter((name) => name !== pickupName);
+  }
+
+  const registeredSet = new Set(registered);
+  return conditional.filter((name) => registeredSet.has(name) && name !== pickupName);
 }
 
 /**

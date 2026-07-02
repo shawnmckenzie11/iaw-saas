@@ -26,7 +26,8 @@ export default function LocationQuickSelect({
   onOther,
   onShowAll,
 }: LocationQuickSelectProps) {
-  const showAllTrigger = showAll || quickOptions.length === 0;
+  const showAllTrigger =
+    showAll || quickOptions.length === 0 || quickOptions.length >= fullOptions.length;
   const chips = showAllTrigger ? fullOptions : quickOptions;
 
   return (
