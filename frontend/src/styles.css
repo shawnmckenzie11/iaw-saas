@@ -296,6 +296,75 @@ body {
   border-radius: 4px;
 }
 
+.pwa-update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: #fff7e6;
+  border-bottom: 1px solid #f0c36d;
+  color: #7a4d00;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.build-stamp {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-left: 8px;
+}
+
+.form-intake-badge {
+  display: inline-block;
+  margin-top: 4px;
+  background: #eef5ff;
+  color: var(--primary);
+  font-size: 9px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.priority-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.assign-priority-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.assign-option {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.assign-option.active {
+  border-color: var(--primary);
+  background: #eef5ff;
+  color: var(--primary);
+}
+
+.assign-queue-select {
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
 .route {
   font-size: 12px;
   color: var(--text);

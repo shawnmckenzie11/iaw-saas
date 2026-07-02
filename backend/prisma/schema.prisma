@@ -95,6 +95,8 @@ model DeliveryRecord {
   id             String         @id @default(uuid()) @db.Uuid
   clientSideUuid String         @unique @map("client_side_uuid") @db.Uuid
   waybillNumber  String         @unique @map("waybill_number")
+  externalSource String?        @map("external_source") @db.VarChar(50)
+  externalRowId  String?        @map("external_row_id") @db.VarChar(100)
   
   // Status & Sync
   status         DeliveryStatus @default(DRAFT)
@@ -135,6 +137,8 @@ model DeliveryRecord {
 
   // Logistics & Comments
   priority             PriorityLevel @default(REGULAR)
+  priorityLabel        String?       @map("priority_label") @db.VarChar(10)
+  driverQueueRank      Int?          @map("driver_queue_rank")
   businessOrResidential String?       @map("business_or_residential")
   additionalComments    String?       @map("additional_comments")
   requestedPickupTime   DateTime?     @map("requested_pickup_time")
@@ -186,7 +190,19 @@ model DeliveryRecord {
   @@index([status])
   @@index([customerId])
   @@index([driverId])
+  @@unique([externalSource, externalRowId])
   @@map("delivery_records")
+}
+
+model IntakeSyncState {
+  id          String   @id @default(uuid()) @db.Uuid
+  adapterName String   @map("adapter_name") @db.VarChar(50)
+  cursorKey   String   @map("cursor_key") @db.VarChar(255)
+  lastCursor  Int      @default(0) @map("last_cursor")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([adapterName, cursorKey])
+  @@map("intake_sync_state")
 }
 
 model WaybillEvent {

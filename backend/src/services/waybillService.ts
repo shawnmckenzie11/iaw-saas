@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { DeliveryRecord, Prisma } from '@prisma/client';
 import { prisma } from '../config/db';
 import {
   projectEventOntoRecord,
@@ -40,6 +40,12 @@ export async function appendEventAndProject(options: AppendEventOptions) {
     const record = await tx.deliveryRecord.findUnique({ where: { waybillNumber } });
     if (!record) {
       throw new Error(`Waybill ${waybillNumber} not found`);
+    }
+
+    if (record.status === 'INVOICED') {
+      const err = new Error('Waybill is locked post-invoice');
+      (err as Error & { statusCode: number }).statusCode = 422;
+      throw err;
     }
 
     const transition = validateStatusTransition(record.status, eventType);
@@ -94,13 +100,21 @@ export async function createWaybillWithEvent(input: {
   dropoffAddress?: string;
   parcelDescription: string;
   parcelWeightClass?: string;
+  parcelWeightLbs?: number | null;
   parcelQuantity?: number;
   priority?: string;
   vehicleType?: string;
   driverId?: string | null;
   pricingTotalCost?: number;
+  capturedAt?: Date;
+  externalSource?: string | null;
+  externalRowId?: string | null;
+  pickupContactName?: string | null;
+  pickupContactPhone?: string | null;
+  additionalComments?: string | null;
+  pricingIsManuallyAdjusted?: boolean;
 }) {
-  const now = new Date();
+  const now = input.capturedAt ?? new Date();
 
   return prisma.$transaction(async (tx) => {
     const record = await tx.deliveryRecord.create({
@@ -108,18 +122,26 @@ export async function createWaybillWithEvent(input: {
         clientSideUuid: input.clientSideUuid,
         waybillNumber: input.waybillNumber,
         status: 'DRAFT',
+        externalSource: input.externalSource ?? null,
+        externalRowId: input.externalRowId ?? null,
         pickupLocationName: input.pickupLocationName,
         pickupAddress: input.pickupAddress ?? input.pickupLocationName,
         dropoffDestinationName: input.dropoffDestinationName,
         dropoffAddress: input.dropoffAddress ?? input.dropoffDestinationName,
         parcelDescription: input.parcelDescription,
         parcelWeightClass: input.parcelWeightClass ?? null,
+        parcelWeightLbs: input.parcelWeightLbs ?? null,
         parcelQuantity: input.parcelQuantity ?? 1,
         priority: (input.priority as 'REGULAR' | 'RUSH') ?? 'REGULAR',
-        vehicleType: (input.vehicleType as 'CAR' | 'TRUCK') ?? 'CAR',
+        vehicleType: (input.vehicleType as DeliveryRecord['vehicleType']) ?? 'CAR',
         capturedAt: now,
         driverId: input.driverId ?? null,
+        pickupContactName: input.pickupContactName ?? null,
+        pickupContactPhone: input.pickupContactPhone ?? null,
+        additionalComments: input.additionalComments ?? null,
         pricingTotalCost: input.pricingTotalCost ?? 0,
+        pricingIsManuallyAdjusted: input.pricingIsManuallyAdjusted ?? false,
+        pricingTier: input.pricingIsManuallyAdjusted ? 'TIER_3' : 'TIER_2',
       },
     });
 

@@ -18,6 +18,8 @@ export interface Waybill {
   skidRequired?: boolean;
   optionalNotes?: string;
   priority?: 'REGULAR' | 'RUSH';
+  driverQueueRank?: number | null;
+  externalSource?: string | null;
   calculatedPrice?: number;
   pricingTotalCost?: number;
   syncStatus?: string;

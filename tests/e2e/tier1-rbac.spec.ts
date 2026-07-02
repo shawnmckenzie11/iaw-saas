@@ -33,6 +33,54 @@ test.describe('Feature 3: API RBAC Gatekeeping (Tier 1)', () => {
     driver1Token = await getDriverToken(request, '1111');
     driver2Token = await getDriverToken(request, '2222');
     dispatcherToken = await getDispatcherToken(request);
+
+    // Helper to ensure a waybill exists and is optionally assigned to a driver
+    const ensureWaybill = async (waybillNumber: string, clientSideUuid: string, driverId: string | null) => {
+      // Check if it already exists
+      const checkRes = await request.get(`/api/waybills/${waybillNumber}`, {
+        headers: { 'Authorization': `Bearer ${dispatcherToken}` }
+      });
+      if (checkRes.status() === 200) {
+        return; // already exists
+      }
+
+      // Create waybill
+      const createRes = await request.post('/api/waybills', {
+        headers: { 'Authorization': `Bearer ${dispatcherToken}` },
+        data: {
+          clientSideUuid,
+          waybillNumber,
+          pickupLocationName: 'Seeded Origin',
+          pickupAddress: '123 Seeded St',
+          dropoffDestinationName: 'Seeded Destination',
+          dropoffAddress: '456 Seeded Rd',
+          parcelDescription: 'Test Parcel',
+          parcelQuantity: 1,
+          priority: 'REGULAR',
+          vehicleType: 'CAR'
+        }
+      });
+      expect([200, 201, 409]).toContain(createRes.status());
+
+      // Assign driver if requested
+      if (driverId && createRes.status() !== 409) {
+        const assignRes = await request.post(`/api/waybills/${waybillNumber}/events`, {
+          headers: { 'Authorization': `Bearer ${dispatcherToken}` },
+          data: {
+            eventType: 'WAYBILL_ASSIGNED',
+            data: { driverId }
+          }
+        });
+        expect([201, 400]).toContain(assignRes.status());
+      }
+    };
+
+    // Seed W-001 assigned to drv-01
+    await ensureWaybill('W-001', '11111111-1111-1111-1111-111111111111', 'drv-01');
+    // Seed W-002 unassigned
+    await ensureWaybill('W-002', '22222222-2222-2222-2222-222222222222', null);
+    // Seed W-003 assigned to drv-02
+    await ensureWaybill('W-003', '33333333-3333-3333-3333-333333333333', 'drv-02');
   });
 
   // F3-T1-01: Driver Read Access to Assigned Waybill

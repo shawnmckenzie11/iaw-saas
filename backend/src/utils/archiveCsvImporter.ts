@@ -1,32 +1,16 @@
 import fs from 'fs';
 import path from 'path';
-import { DeliveryStatus, PriorityLevel, VehicleType } from '@prisma/client';
-import { calculatePrice } from './pricing';
+import { DeliveryStatus } from '@prisma/client';
+import { VERIFIED_BUSINESSES } from './csvLocationMapper';
 import {
-  mapPriority,
-  mapToVerified,
-  mapVehicleType,
-  parseWeightClass,
-  VERIFIED_BUSINESSES,
-} from './csvLocationMapper';
+  parseCsvLine,
+  parseRequestFields,
+  resolveRequestPrice,
+} from '../intake/parseRequestRow';
+import { ParsedRequestRow, REQUEST_PRICE_FALLBACK } from '../intake/types';
 
-export interface ParsedArchiveRow {
-  timestamp: Date;
-  pickupLocationName: string;
-  dropoffDestinationName: string;
-  pickupAddress: string;
-  dropoffAddress: string;
-  vehicleType: VehicleType;
-  priority: PriorityLevel;
-  parcelDescription: string;
-  parcelWeightClass: string;
-  contactName: string;
-  contactPhone: string;
-  additionalComments: string;
-  calculatedPrice: number;
-  priceCategory: string;
-  skidRequired: boolean;
-}
+/** @deprecated Use ParsedRequestRow from intake/types — kept for archive reseed compatibility. */
+export type ParsedArchiveRow = ParsedRequestRow;
 
 export interface TopPickupsStats {
   generatedAt: string;
@@ -53,44 +37,7 @@ export function resolveArchiveCsvPath(): string {
 
 const DEFAULT_TOP_PICKUPS_PATH = repoPath('frontend', 'src', 'data', 'topPickups.json');
 
-/**
- * Parses a single CSV line handling quoted fields with embedded commas.
- */
-export function parseCsvLine(line: string): string[] {
-  const result: string[] = [];
-  let current = '';
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    if (char === '"') {
-      inQuotes = !inQuotes;
-    } else if (char === ',' && !inQuotes) {
-      result.push(current.replace(/^"|"$/g, '').trim());
-      current = '';
-    } else {
-      current += char;
-    }
-  }
-  result.push(current.replace(/^"|"$/g, '').trim());
-  return result;
-}
-
-/**
- * Parses a flexible date string from archive CSV rows.
- */
-function parseArchiveDate(raw: string): Date {
-  if (!raw) return new Date();
-  const parsed = new Date(raw);
-  if (!Number.isNaN(parsed.getTime())) return parsed;
-  const parts = raw.split(/[/-]/);
-  if (parts.length >= 3) {
-    const month = parseInt(parts[0], 10) - 1;
-    const day = parseInt(parts[1], 10);
-    const year = parseInt(parts[2].length === 2 ? `20${parts[2]}` : parts[2], 10);
-    return new Date(year, month, day);
-  }
-  return new Date();
-}
+export { parseCsvLine };
 
 /**
  * Reads and parses all valid rows from the archive CSV.
@@ -108,45 +55,8 @@ export function readArchiveCsv(csvPath?: string): ParsedArchiveRow[] {
 
   for (let i = 1; i < lines.length; i++) {
     const fields = parseCsvLine(lines[i]);
-    if (fields.length < 3) continue;
-
-    const rawPickup = fields[1];
-    const rawDropoff = fields[2];
-    const pickup = mapToVerified(rawPickup);
-    const dropoff = mapToVerified(rawDropoff);
-    if (!pickup || !dropoff) continue;
-
-    const timestamp = parseArchiveDate(fields[0] || '');
-    const vehicleType = mapVehicleType(fields[3] || 'CAR');
-    const priority = mapPriority(fields[5] || 'Regular') as PriorityLevel;
-    const additionalComments = fields[7] || '';
-    const description = fields[8] || 'Standard Package';
-    const contactName = fields[9] || '';
-    const contactPhone = fields[10] || '';
-    const weightClass = parseWeightClass(description, additionalComments);
-    const skidRequired =
-      additionalComments.toLowerCase().includes('skid') ||
-      description.toLowerCase().includes('skid') ||
-      description.toLowerCase().includes('pallet');
-    const pricing = calculatePrice(pickup, dropoff, weightClass, skidRequired, priority);
-
-    rows.push({
-      timestamp,
-      pickupLocationName: pickup,
-      dropoffDestinationName: dropoff,
-      pickupAddress: rawPickup,
-      dropoffAddress: rawDropoff,
-      vehicleType,
-      priority,
-      parcelDescription: description || 'Standard Package',
-      parcelWeightClass: weightClass,
-      contactName,
-      contactPhone,
-      additionalComments,
-      calculatedPrice: pricing.price,
-      priceCategory: pricing.category,
-      skidRequired,
-    });
+    const parsed = parseRequestFields(fields);
+    if (parsed) rows.push(parsed);
   }
 
   rows.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
@@ -177,7 +87,7 @@ export function computeTopPickups(rows: ParsedArchiveRow[], windowDays = 365, li
 }
 
 /** Minimum price applied when route pricing returns zero or manual. */
-export const ARCHIVE_PRICE_FALLBACK = 1;
+export const ARCHIVE_PRICE_FALLBACK = REQUEST_PRICE_FALLBACK;
 
 /** Default cutoff for YTD archive imports (Jan 1 of current year). */
 export function archiveYearStart(year?: number): Date {
@@ -197,7 +107,7 @@ export function filterArchiveRowsSince(rows: ParsedArchiveRow[], since: Date): P
  * Resolves a delivery price from pricing rules, using fallback when unrated.
  */
 export function resolveArchivePrice(row: ParsedArchiveRow, fallback = ARCHIVE_PRICE_FALLBACK): number {
-  return row.calculatedPrice > 0 ? row.calculatedPrice : fallback;
+  return resolveRequestPrice(row, fallback);
 }
 
 /**

@@ -25,6 +25,8 @@ function waybillFromEvent(evt: QueuedEvent, base?: Waybill): Waybill {
     parcelWeightClass:
       typeof d.parcelWeightClass === 'string' ? d.parcelWeightClass : base?.parcelWeightClass,
     priority: (d.priority as Waybill['priority']) ?? base?.priority ?? 'REGULAR',
+    driverQueueRank:
+      typeof d.driverQueueRank === 'number' ? d.driverQueueRank : base?.driverQueueRank ?? null,
     calculatedPrice:
       typeof d.calculatedPrice === 'number' ? d.calculatedPrice : base?.calculatedPrice,
     podRequired: d.podRequired === true || base?.podRequired,
@@ -60,8 +62,15 @@ export async function mergeQueuedWaybills(apiWaybills: Waybill[]): Promise<Waybi
         wb = wb ?? waybillFromEvent(evt);
         if (evt.data?.driverId === null) {
           wb.driverId = null;
+          wb.driverQueueRank = null;
         } else if (typeof evt.data?.driverId === 'string') {
           wb.driverId = evt.data.driverId;
+        }
+        if (evt.data?.priority === 'RUSH' || evt.data?.priority === 'REGULAR') {
+          wb.priority = evt.data.priority;
+        }
+        if (typeof evt.data?.driverQueueRank === 'number') {
+          wb.driverQueueRank = evt.data.driverQueueRank;
         }
       } else if (evt.eventType === 'WAYBILL_PICKED_UP') {
         wb = waybillFromEvent(evt, wb);

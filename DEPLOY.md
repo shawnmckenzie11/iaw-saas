@@ -192,3 +192,57 @@ SERVE_FRONTEND=true FRONTEND_DIST=../frontend/dist PORT=8080 node dist/server.js
 ```
 
 Open http://localhost:8080 — you should see the login UI with API on the same port.
+
+---
+
+## Google Sheets live intake (temporary)
+
+Until a native web form ships, new Google Form submissions can flow into the dispatch **Active Jobs** tab as unassigned **DRAFT** pickups. The backend polls the linked sheet about every 60 seconds.
+
+### One-time Google Cloud setup
+
+1. Open [Google Cloud Console](https://console.cloud.google.com/) and create or select a project.
+2. Enable the **Google Sheets API**.
+3. Create a **Service Account** and download its JSON key.
+4. Open the [live responses sheet](https://docs.google.com/spreadsheets/d/1olbOlF2Rody3B0PWBRC5Ukjmth_Vw-OgiVtJ4YpPqsg/edit) and **Share** it with the service account email (`...@....iam.gserviceaccount.com`) as **Viewer**.
+
+### Fly secrets
+
+```bash
+fly secrets set \
+  INTAKE_GOOGLE_SHEETS_ENABLED=true \
+  GOOGLE_SHEETS_SPREADSHEET_ID=1olbOlF2Rody3B0PWBRC5Ukjmth_Vw-OgiVtJ4YpPqsg \
+  GOOGLE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}' \
+  INTAKE_GOOGLE_SHEETS_INTERVAL_MS=60000 \
+  --app iaw-saas
+
+fly deploy --app iaw-saas
+```
+
+On first deploy with intake enabled, logs should show the cursor initialized to the sheet’s current last row — existing rows are skipped so they are not duplicated as `REQ-*` waybills.
+
+**Pause intake without redeploying:**
+
+```bash
+fly secrets set INTAKE_GOOGLE_SHEETS_ENABLED=false --app iaw-saas
+```
+
+Dispatchers can also trigger a manual sync: `POST /api/admin/intake/sync` (requires dispatcher JWT).
+
+### Verify intake
+
+1. Submit a test row via the Google Form.
+2. Within ~60s, check `fly logs --app iaw-saas` for `[Intake:google_sheet] sync complete imported=1`.
+3. Open **Active Jobs** on the dispatch dashboard — the new `REQ-*` row should appear unassigned.
+
+### Unplug checklist (when native web form replaces Sheets)
+
+1. `fly secrets set INTAKE_GOOGLE_SHEETS_ENABLED=false --app iaw-saas`
+2. Remove `GOOGLE_SHEETS_SPREADSHEET_ID` and `GOOGLE_SERVICE_ACCOUNT_JSON` from Fly secrets
+3. Delete `backend/src/integrations/googleSheets/`
+4. Remove `googleapis` from `backend/package.json`
+5. Remove the Google adapter registration in `backend/src/intake/registerAdapters.ts`
+6. Add `POST /api/intake/requests` calling the shared `intakeService.createDraftWaybillFromRequest()`
+7. Existing `external_source='google_sheet'` waybills remain in the database unchanged
+
+The static CSV at `docs/BACKUP of Requests - Archive.csv` stays available for one-time reseeds via `npm run reseed:archive`.

@@ -1,6 +1,7 @@
 import app from './app';
 import dotenv from 'dotenv';
 import path from 'path';
+import { registerIntakeAdapters } from './intake/registerAdapters';
 
 dotenv.config();
 
@@ -15,4 +16,5 @@ app.listen(Number(PORT), '0.0.0.0', () => {
   } else {
     console.log(`[Server] UI (PWA)  →  http://localhost:3000  (run "npm run dev" from repo root)`);
   }
+  registerIntakeAdapters();
 });

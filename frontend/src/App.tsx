@@ -4,6 +4,8 @@ import DashboardPage from './pages/DashboardPage';
 import PickupPage from './pages/PickupPage';
 import SignOffPage from './pages/SignOffPage';
 import AccountingPage from './pages/AccountingPage';
+import PwaUpdateBanner from './components/PwaUpdateBanner';
+import { APP_BUILD, ensureFreshAppBuildCache } from './config/appBuild';
 import {
   authenticateUser,
   clearSession,
@@ -29,6 +31,10 @@ export default function App() {
   const [cachedWaybills, setCachedWaybills] = useState<Waybill[]>([]);
   const [stats, setStats] = useState<SyncStats>({ pendingCount: 0, syncedCount: 0, conflictCount: 0 });
   const [isOnline, setIsOnline] = useState(() => readNetworkOnline());
+
+  useEffect(() => {
+    ensureFreshAppBuildCache();
+  }, []);
 
   useEffect(() => {
     if (session) {
@@ -155,7 +161,9 @@ export default function App() {
   }
 
   return (
-    <DashboardPage
+    <>
+      <PwaUpdateBanner />
+      <DashboardPage
       session={session}
       isOnline={isOnline}
       syncStats={stats}
@@ -185,6 +193,7 @@ export default function App() {
         setScreen('accounting');
       }}
     />
+    </>
   );
 }
 

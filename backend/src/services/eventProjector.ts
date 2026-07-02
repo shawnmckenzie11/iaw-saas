@@ -65,8 +65,26 @@ export function projectEventOntoRecord(
     case 'WAYBILL_ASSIGNED':
       if (data.driverId === null) {
         update.driver = { disconnect: true };
+        update.driverQueueRank = null;
       } else if (typeof data.driverId === 'string') {
         update.driver = { connect: { id: data.driverId } };
+      }
+      if (typeof data.driverQueueRank === 'number') {
+        update.driverQueueRank = data.driverQueueRank;
+      }
+      if (data.driverQueueRank === null) {
+        update.driverQueueRank = null;
+      }
+      if (typeof data.priority === 'string') {
+        update.priority = data.priority as DeliveryRecord['priority'];
+      }
+      if (typeof data.priorityLabel === 'string' && data.priorityLabel === 'ECO') {
+        update.priority = 'RUSH';
+        update.priorityLabel = null;
+      } else if (typeof data.priorityLabel === 'string') {
+        update.priorityLabel = data.priorityLabel;
+      } else if (data.priorityLabel === null) {
+        update.priorityLabel = null;
       }
       break;
     case 'WAYBILL_PICKED_UP':
@@ -170,7 +188,8 @@ export function serializeWaybill(record: DeliveryRecord) {
     pickupAddress: record.pickupAddress,
     dropoffDestinationName: record.dropoffDestinationName,
     dropoffAddress: record.dropoffAddress,
-    priority: record.priority,
+    priority: record.priorityLabel === 'ECO' ? 'RUSH' : record.priority,
+    driverQueueRank: record.driverQueueRank,
     createdAt: record.createdAt.toISOString(),
     capturedAt: record.capturedAt.toISOString(),
     deliveredAt: record.deliveredAt?.toISOString() ?? null,
@@ -178,6 +197,7 @@ export function serializeWaybill(record: DeliveryRecord) {
     signatureImageUrl: record.signatureImageUrl,
     additionalComments: record.additionalComments,
     podRequired: record.additionalComments === '__podRequired',
+    externalSource: record.externalSource,
     calculatedPrice: Number(record.pricingTotalCost),
     pricingTotalCost: Number(record.pricingTotalCost),
   };

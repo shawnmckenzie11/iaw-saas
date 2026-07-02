@@ -1,11 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../config/db';
-import { requireAuth, requireRole } from '../middleware/auth';
+import { requireAuth, requireRole, checkWaybillAccess } from '../middleware/auth';
 import {
   appendWaybillEvent,
-  canDriverAccessWaybill,
   createWaybillWithEvent,
 } from '../services/waybillService';
+import { buildAssignmentEventData } from '../services/driverQueueService';
 import { serializeWaybill } from '../services/eventProjector';
 
 const router = Router();
@@ -33,7 +33,7 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
 /**
  * GET /api/waybills/:waybillNumber — Returns a waybill if the caller is authorized.
  */
-router.get('/:waybillNumber', requireAuth, async (req: Request, res: Response) => {
+router.get('/:waybillNumber', requireAuth, checkWaybillAccess, async (req: Request, res: Response) => {
   const record = await prisma.deliveryRecord.findUnique({
     where: { waybillNumber: req.params.waybillNumber },
   });
@@ -41,13 +41,6 @@ router.get('/:waybillNumber', requireAuth, async (req: Request, res: Response) =
   if (!record) {
     res.status(404).json({ error: 'Waybill not found' });
     return;
-  }
-
-  if (req.auth!.role === 'DRIVER') {
-    if (!canDriverAccessWaybill(req.auth!.driverId!, record)) {
-      res.status(403).json({ error: 'Forbidden' });
-      return;
-    }
   }
 
   res.json(serializeWaybill(record));
@@ -85,42 +78,34 @@ router.post('/', requireAuth, requireRole('DISPATCHER'), async (req: Request, re
     return;
   }
 
-  const record = await createWaybillWithEvent({
-    clientSideUuid,
-    waybillNumber,
-    pickupLocationName,
-    pickupAddress,
-    dropoffDestinationName,
-    dropoffAddress,
-    parcelDescription,
-    parcelQuantity,
-    priority,
-    vehicleType,
-  });
-
-  res.status(201).json(serializeWaybill(record));
+  try {
+    const record = await createWaybillWithEvent({
+      clientSideUuid,
+      waybillNumber,
+      pickupLocationName,
+      pickupAddress,
+      dropoffDestinationName,
+      dropoffAddress,
+      parcelDescription,
+      parcelQuantity,
+      priority,
+      vehicleType,
+    });
+    res.status(201).json(serializeWaybill(record));
+  } catch (err) {
+    const error = err as Error;
+    if (error.message.includes('Unique constraint')) {
+      res.status(409).json({ error: 'Waybill or Client UUID already exists' });
+    } else {
+      res.status(500).json({ error: error.message });
+    }
+  }
 });
 
 /**
  * GET /api/waybills/:waybillNumber/events — Returns append-only event history.
  */
-router.get('/:waybillNumber/events', requireAuth, async (req: Request, res: Response) => {
-  const record = await prisma.deliveryRecord.findUnique({
-    where: { waybillNumber: req.params.waybillNumber },
-  });
-
-  if (!record) {
-    res.status(404).json({ error: 'Waybill not found' });
-    return;
-  }
-
-  if (req.auth!.role === 'DRIVER') {
-    if (!canDriverAccessWaybill(req.auth!.driverId!, record)) {
-      res.status(403).json({ error: 'Forbidden' });
-      return;
-    }
-  }
-
+router.get('/:waybillNumber/events', requireAuth, checkWaybillAccess, async (req: Request, res: Response) => {
   const events = await prisma.waybillEvent.findMany({
     where: { waybillNumber: req.params.waybillNumber },
     orderBy: { sequenceNumber: 'asc' },
@@ -142,31 +127,61 @@ router.get('/:waybillNumber/events', requireAuth, async (req: Request, res: Resp
 /**
  * POST /api/waybills/:waybillNumber/events — Appends a new lifecycle event.
  */
-router.post('/:waybillNumber/events', requireAuth, async (req: Request, res: Response) => {
+router.post('/:waybillNumber/events', requireAuth, checkWaybillAccess, async (req: Request, res: Response) => {
   const { eventType, data } = req.body;
   if (!eventType) {
     res.status(400).json({ error: 'eventType is required' });
     return;
   }
 
-  const record = await prisma.deliveryRecord.findUnique({
-    where: { waybillNumber: req.params.waybillNumber },
-  });
-
-  if (!record) {
-    res.status(404).json({ error: 'Waybill not found' });
-    return;
-  }
-
-  if (req.auth!.role === 'DRIVER') {
-    if (!canDriverAccessWaybill(req.auth!.driverId!, record)) {
-      res.status(403).json({ error: 'Forbidden' });
+  const user = req.user || req.auth;
+  const sanitizedData = { ...data };
+  if (user?.role === 'DRIVER') {
+    if (eventType === 'DISPATCHER_OVERRIDE' || eventType === 'DISPATCHER_CORRECTION') {
+      res.status(403).json({ error: 'Forbidden event type for driver' });
       return;
+    }
+    if (sanitizedData) {
+      delete sanitizedData.calculatedPrice;
+      delete sanitizedData.pricingTotalCost;
     }
   }
 
   try {
-    const event = await appendWaybillEvent(req.params.waybillNumber, { eventType, data: data ?? {} });
+    let eventData = sanitizedData ?? {};
+
+    if (eventType === 'WAYBILL_ASSIGNED' && user?.role === 'DISPATCHER') {
+      const current = await prisma.deliveryRecord.findUnique({
+        where: { waybillNumber: req.params.waybillNumber },
+        select: { priority: true },
+      });
+
+      const driverId =
+        eventData.driverId === null
+          ? null
+          : typeof eventData.driverId === 'string'
+            ? eventData.driverId
+            : null;
+
+      const priority =
+        eventData.priority === 'RUSH' || eventData.priority === 'REGULAR'
+          ? eventData.priority
+          : current?.priority ?? 'REGULAR';
+
+      eventData = await buildAssignmentEventData({
+        driverId,
+        waybillNumber: req.params.waybillNumber,
+        priority,
+        queuePosition:
+          eventData.queuePosition === 'top' || eventData.queuePosition === 'bottom'
+            ? eventData.queuePosition
+            : typeof eventData.afterWaybillNumber === 'string'
+              ? { afterWaybillNumber: eventData.afterWaybillNumber }
+              : undefined,
+      });
+    }
+
+    const event = await appendWaybillEvent(req.params.waybillNumber, { eventType, data: eventData });
     res.status(201).json({
       id: event.id,
       sequenceNumber: event.sequenceNumber,

@@ -32,7 +32,7 @@ This document describes the architectural state, development status, verificatio
 | RBAC Middleware | `backend/src/middleware/auth.ts` | **COMPLETE** | JWT role claims; driver/dispatcher gates. |
 | Waybill API | `GET/POST /api/waybills`, `GET /api/waybills` list, events sub-routes | **COMPLETE** | Event sourcing with replay projection; list endpoint for dashboard. |
 | Sync API | `POST /api/sync/events`, `POST /api/sync/blobs` | **COMPLETE** | Batch events + multipart blob upload. |
-| Admin API | `GET /api/admin/rates` | **COMPLETE** | Dispatcher-only route rates. |
+| Admin API | `GET /api/admin/rates`, `POST /api/admin/intake/sync` | **COMPLETE** | Dispatcher-only route rates + manual intake sync. |
 | Frontend PWA | `frontend/` | **COMPLETE** | Multi-step pickup, sign-off, dispatch dashboard, accounting, conflict sync. |
 | IndexedDB Queues | `frontend/src/db/indexedDb.ts` | **COMPLETE** | Dual queues with PENDING/SYNCED/CONFLICT event states. |
 | Driver Portal UI | `frontend/src/pages/PickupPage.tsx`, `SignOffPage.tsx` | **COMPLETE** | 3-step pickup wizard ported from `mobile/` (More/Other chips, conditional dropoffs); sign-off on SignOffPage. |
@@ -85,12 +85,13 @@ npm run dev          # Starts backend :3002 + frontend :3000
 
 ### Backend (Jest + Supertest)
 ```bash
-npm run test:backend
+npm run test
 ```
 | Test | Status |
 |---|---|
 | Health check (`GET /health`) | **PASS** |
 | Database downtime graceful degradation | **PASS** |
+| Dual Auth & RBAC Boundaries Integration (`src/routes/auth.test.ts`) | **PASS** |
 
 ### End-to-End (Playwright — Tier 1)
 ```bash
@@ -139,6 +140,14 @@ Runs backend Jest (`test:backend`) then Playwright Tier 1 (`test:e2e`).
 - Server-side partial sync conflict indices (F6-T2-01)
 - Tier 2–5 E2E scenarios per `TEST_INFRA.md`
 
+### Google Sheets live intake (2026-07-02)
+- **Pluggable intake layer** (`backend/src/intake/`): `IntakeAdapter`, `parseRequestRow`, `intakeService`, `registerAdapters`, `IntakeSyncState` cursor.
+- **Temporary adapter** (`backend/src/integrations/googleSheets/`): 60s poll when `INTAKE_GOOGLE_SHEETS_ENABLED=true`; new rows → unassigned `DRAFT` waybills (`REQ-{row}`).
+- **Schema**: `external_source` / `external_row_id` on `delivery_records`; migration `20260702120000_intake_external_ids`.
+- **Frontend**: Dispatch dashboard polls waybills every ~12s (drivers + dispatchers).
+- **Docs**: Google Cloud setup, Fly secrets, kill switch, unplug checklist in `DEPLOY.md`.
+- **Deploy**: Set Fly secrets + `fly deploy`; first run skips existing sheet rows via cursor init.
+
 ---
 
 ## 6. Verification Status (2026-07-02 — MVP fixes)
@@ -147,9 +156,9 @@ Runs backend Jest (`test:backend`) then Playwright Tier 1 (`test:e2e`).
 |---|---|---|
 | Backend compile | **PASS** | `npm run build --prefix backend` |
 | Frontend compile | **PASS** | `npm run build --prefix frontend` |
-| Backend integration tests | **PASS** (2/2) | `npm run test:backend` |
+| Backend integration tests | **PASS** (38/38) | `npm run test` |
 | E2E Tier 1 tests | **PASS** (34/34) | `npm run test:e2e` |
-| Full suite | **PASS** (36/36) | `npm test` |
+| Full suite | **PASS** (72/72) | `npm test` |
 | Database seed | **PASS** | `npx ts-node backend/src/seed.ts` |
 
 **MVP fixes shipped:** invoice PDF print, pending-pickup hydration, driver action button, pickup UX, dual-login tabs/docs, drivers 3–4 in seed + auth.

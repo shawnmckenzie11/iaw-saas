@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Production build output
+dist/
+
+# Local configuration and credentials
+.env
+
+# Uploads directory
+uploads/*
+!uploads/.gitkeep
+
+# Logs and system files
+*.log
+.DS_Store

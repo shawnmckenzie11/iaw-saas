@@ -46,9 +46,10 @@ export const VERIFIED_BUSINESSES = [
 ];
 
 /**
- * Maps a raw CSV location string to a verified canonical business name.
+ * Maps a raw location string to a verified business using explicit keyword rules only.
+ * Does not use fuzzy substring matching — use when intake must be confident.
  */
-export function mapToVerified(rawName: string | undefined | null): string | null {
+export function mapToVerifiedConfident(rawName: string | undefined | null): string | null {
   if (!rawName) return null;
   const name = rawName.trim().toLowerCase();
 
@@ -108,6 +109,19 @@ export function mapToVerified(rawName: string | undefined | null): string | null
   if (name.includes('tracks')) return 'Tracks & Wheels';
   if (name.includes('victoria')) return 'Victoria Mine';
   if (name.includes('wajax')) return 'Wajax';
+
+  return null;
+}
+
+/**
+ * Maps a raw CSV location string to a verified canonical business name.
+ */
+export function mapToVerified(rawName: string | undefined | null): string | null {
+  const confident = mapToVerifiedConfident(rawName);
+  if (confident) return confident;
+
+  if (!rawName) return null;
+  const name = rawName.trim().toLowerCase();
 
   for (const verified of VERIFIED_BUSINESSES) {
     const vLower = verified.toLowerCase();

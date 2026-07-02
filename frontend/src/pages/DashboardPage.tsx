@@ -9,8 +9,23 @@ import { waybillPrice } from '../types/waybill';
 import { formatWaybillDate, formatWaybillTime } from '../utils/formatters';
 import { calculatePrice, getLocationShortName } from '../utils/pricing';
 import { mergeQueuedWaybills } from '../utils/queuedWaybills';
+import {
+  isRushTierWaybill,
+  priorityBadgeLabel,
+  sortDispatchActiveWaybills,
+  sortDriverDeliveryQueue,
+} from '../utils/waybillSort';
+import { APP_BUILD } from '../config/appBuild';
 
 export type { Waybill };
+
+type QueuePosition = 'top' | 'bottom' | { afterWaybillNumber: string };
+
+type AssignmentDraft = {
+  driverId: string;
+  priority: 'REGULAR' | 'RUSH';
+  queuePosition: QueuePosition;
+};
 
 type DispatchTab = 'ACTIVE' | 'PENDING_PRICE' | 'COMPLETED';
 
@@ -32,10 +47,10 @@ interface DashboardProps {
  */
 function DispatchAssignmentCell({
   wb,
-  onAssign,
+  onAssignClick,
 }: {
   wb: Waybill;
-  onAssign: (driverId: string | null) => void;
+  onAssignClick: (driverId: string) => void;
 }) {
   if (wb.status === 'DELIVERED') {
     return <span className="driver-chip-label">{driverFirstName(wb.driverId)}</span>;
@@ -54,9 +69,7 @@ function DispatchAssignmentCell({
             aria-pressed={wb.driverId === driver.id}
             onClick={(e) => {
               e.stopPropagation();
-              if (wb.driverId !== driver.id) {
-                onAssign(driver.id);
-              }
+              onAssignClick(driver.id);
             }}
           >
             {driver.firstName[0]}
@@ -71,7 +84,7 @@ function DispatchAssignmentCell({
           aria-label="Unassign driver"
           onClick={(e) => {
             e.stopPropagation();
-            onAssign(null);
+            onAssignClick('__unassign__');
           }}
         >
           X
@@ -115,6 +128,8 @@ export default function DashboardPage({
   const [deliverConfirmWaybill, setDeliverConfirmWaybill] = useState<Waybill | null>(null);
   const [quotePrice, setQuotePrice] = useState('');
   const [conflictEvents, setConflictEvents] = useState<Array<{ id: string; waybillNumber: string }>>([]);
+  const [assignModalWaybill, setAssignModalWaybill] = useState<Waybill | null>(null);
+  const [assignDraft, setAssignDraft] = useState<AssignmentDraft | null>(null);
   const isDispatcher = session.role === 'DISPATCHER';
 
   useEffect(() => {
@@ -158,6 +173,10 @@ export default function DashboardPage({
         const res = await fetch('/api/waybills', {
           headers: { Authorization: `Bearer ${session.token}` },
         });
+        if (res.status === 401) {
+          onSignOut();
+          return;
+        }
         if (res.ok) {
           loaded = (await res.json()) as Waybill[];
         }
@@ -188,9 +207,9 @@ export default function DashboardPage({
     void loadWaybills();
   }, [session.token, syncStats.pendingCount, syncStats.syncedCount]);
 
-  /** Poll for dispatcher assignment updates while the driver dashboard is open. */
+  /** Poll for assignment and intake updates while the dashboard is open. */
   useEffect(() => {
-    if (isDispatcher || !isOnline) return;
+    if (!isOnline) return;
     const interval = window.setInterval(() => {
       void loadWaybills();
     }, 12000);
@@ -202,23 +221,63 @@ export default function DashboardPage({
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('pageshow', onFocus);
     };
-  }, [isDispatcher, isOnline, session.token]);
+  }, [isOnline, session.token]);
+
+  /**
+   * Opens the assignment modal with defaults based on rush tier and target driver queue.
+   */
+  const openAssignModal = (wb: Waybill, driverId: string) => {
+    if (driverId === '__unassign__') {
+      void handleAssignDriver(wb, null);
+      return;
+    }
+
+    const rush = isRushTierWaybill(wb);
+    setAssignModalWaybill(wb);
+    setAssignDraft({
+      driverId,
+      priority: rush ? 'RUSH' : wb.priority ?? 'REGULAR',
+      queuePosition: rush ? 'top' : 'bottom',
+    });
+  };
 
   /**
    * Posts a driver assignment event and refreshes local waybill cache.
    */
-  const handleAssignDriver = async (wb: Waybill, driverId: string | null) => {
+  const handleAssignDriver = async (
+    wb: Waybill,
+    driverId: string | null,
+    options?: Omit<AssignmentDraft, 'driverId'>
+  ) => {
     if (!isDispatcher) return;
+
+    const nextPriority = options?.priority ?? wb.priority ?? 'REGULAR';
 
     setWaybills((prev) => {
       const next = prev.map((row) =>
-        row.waybillNumber === wb.waybillNumber ? { ...row, driverId } : row
+        row.waybillNumber === wb.waybillNumber
+          ? {
+              ...row,
+              driverId,
+              priority: nextPriority,
+            }
+          : row
       );
       sessionStorage.setItem('iaw_waybills', JSON.stringify(next));
       return next;
     });
 
     try {
+      const body: Record<string, unknown> = { driverId };
+      if (options) {
+        body.priority = options.priority;
+        if (options.queuePosition === 'top' || options.queuePosition === 'bottom') {
+          body.queuePosition = options.queuePosition;
+        } else if ('afterWaybillNumber' in options.queuePosition) {
+          body.afterWaybillNumber = options.queuePosition.afterWaybillNumber;
+        }
+      }
+
       const res = await fetch(`/api/waybills/${wb.waybillNumber}/events`, {
         method: 'POST',
         headers: {
@@ -227,7 +286,7 @@ export default function DashboardPage({
         },
         body: JSON.stringify({
           eventType: 'WAYBILL_ASSIGNED',
-          data: { driverId },
+          data: body,
         }),
       });
       if (!res.ok) {
@@ -239,6 +298,19 @@ export default function DashboardPage({
     } catch {
       // optimistic update already applied for offline responsiveness
     }
+  };
+
+  /**
+   * Confirms assignment modal choices and closes the dialog.
+   */
+  const handleConfirmAssignment = async () => {
+    if (!assignModalWaybill || !assignDraft) return;
+    await handleAssignDriver(assignModalWaybill, assignDraft.driverId, {
+      priority: assignDraft.priority,
+      queuePosition: assignDraft.queuePosition,
+    });
+    setAssignModalWaybill(null);
+    setAssignDraft(null);
   };
 
   /**
@@ -366,8 +438,10 @@ export default function DashboardPage({
 
   const visibleWaybills = useMemo(() => {
     if (!isDispatcher) {
-      return scopedWaybills.filter(
-        (w) => w.status === 'DRAFT' || w.status === 'PICKED_UP' || w.status === 'DELIVERED'
+      return sortDriverDeliveryQueue(
+        scopedWaybills.filter(
+          (w) => w.status === 'DRAFT' || w.status === 'PICKED_UP' || w.status === 'DELIVERED'
+        )
       );
     }
 
@@ -413,7 +487,9 @@ export default function DashboardPage({
       return scopedWaybills.filter((w) => w.status === 'DELIVERED' && waybillPrice(w) <= 0);
     }
 
-    return scopedWaybills.filter((w) => w.status === 'DRAFT' || w.status === 'PICKED_UP');
+    return sortDispatchActiveWaybills(
+      scopedWaybills.filter((w) => w.status === 'DRAFT' || w.status === 'PICKED_UP')
+    );
   }, [
     completedEndDate,
     completedSearchQuery,
@@ -425,12 +501,26 @@ export default function DashboardPage({
 
   const conflictWaybillNumbers = new Set(conflictEvents.map((e) => e.waybillNumber));
 
+  const driverQueueOptions = useMemo(() => {
+    if (!assignModalWaybill || !assignDraft) return [];
+    return sortDriverDeliveryQueue(
+      waybills.filter(
+        (w) =>
+          w.driverId === assignDraft.driverId &&
+          w.waybillNumber !== assignModalWaybill.waybillNumber &&
+          (w.status === 'DRAFT' || w.status === 'PICKED_UP')
+      )
+    );
+  }, [assignDraft, assignModalWaybill, waybills]);
+
+  const assignDriverName = DRIVERS.find((d) => d.id === assignDraft?.driverId)?.firstName ?? 'Driver';
+
   return (
     <div className="dashboard">
       <header className="dashboard-header">
         <div className="header-left">
           {isDispatcher ? (
-            <span className="dispatch-title">⚙️ Dispatch</span>
+            <span className="dispatch-title">⚙️ Dispatch <span className="build-stamp">{APP_BUILD}</span></span>
           ) : (
             <span className="driver-title">Driver Portal</span>
           )}
@@ -594,7 +684,14 @@ export default function DashboardPage({
                 >
                   <td>
                     <div className="table-waybill">{wb.waybillNumber}</div>
-                    {wb.priority === 'RUSH' && <span className="rush-badge">RUSH</span>}
+                    {wb.externalSource === 'google_sheet' && (
+                      <span className="form-intake-badge">LIVE FORM</span>
+                    )}
+                    {priorityBadgeLabel(wb) && (
+                      <div className="priority-badges">
+                        <span className="rush-badge">{priorityBadgeLabel(wb)}</span>
+                      </div>
+                    )}
                     {hasConflict && <span className="conflict-badge">CONFLICT</span>}
                   </td>
                   <td>{formatWaybillDate(timestamp)}</td>
@@ -620,7 +717,7 @@ export default function DashboardPage({
                     {isDispatcher ? (
                       <DispatchAssignmentCell
                         wb={wb}
-                        onAssign={(driverId) => void handleAssignDriver(wb, driverId)}
+                        onAssignClick={(driverId) => openAssignModal(wb, driverId)}
                       />
                     ) : showDriverAction ? (
                         <button
@@ -693,6 +790,89 @@ export default function DashboardPage({
                 onClick={() => void handleConfirmDelivery(deliverConfirmWaybill)}
               >
                 ✔ Confirm Delivery
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {assignModalWaybill && assignDraft && (
+        <div className="modal-overlay">
+          <div className="modal-content assign-modal">
+            <h3>Assign to {assignDriverName}</h3>
+            <div className="modal-details">
+              <div>Waybill #: {assignModalWaybill.waybillNumber}</div>
+              <div>Route: {assignModalWaybill.pickupLocationName} → {assignModalWaybill.dropoffDestinationName}</div>
+              <div>Cargo: {assignModalWaybill.parcelDescription}</div>
+            </div>
+
+            <label>Priority</label>
+            <div className="assign-priority-row">
+              {(['REGULAR', 'RUSH'] as const).map((level) => (
+                <button
+                  key={level}
+                  type="button"
+                  className={`assign-option${assignDraft.priority === level ? ' active' : ''}`}
+                  onClick={() =>
+                    setAssignDraft((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            priority: level,
+                            queuePosition: level === 'RUSH' ? 'top' : 'bottom',
+                          }
+                        : prev
+                    )
+                  }
+                >
+                  {level === 'REGULAR' ? 'Regular' : 'Rush'}
+                </button>
+              ))}
+            </div>
+
+            <label>Queue position for {assignDriverName}</label>
+            <select
+              className="assign-queue-select"
+              value={
+                assignDraft.queuePosition === 'top'
+                  ? 'top'
+                  : assignDraft.queuePosition === 'bottom'
+                    ? 'bottom'
+                    : assignDraft.queuePosition.afterWaybillNumber
+              }
+              onChange={(e) => {
+                const value = e.target.value;
+                setAssignDraft((prev) => {
+                  if (!prev) return prev;
+                  if (value === 'top' || value === 'bottom') {
+                    return { ...prev, queuePosition: value };
+                  }
+                  return { ...prev, queuePosition: { afterWaybillNumber: value } };
+                });
+              }}
+            >
+              <option value="top">Top of queue (deliver first)</option>
+              {driverQueueOptions.map((job) => (
+                <option key={job.waybillNumber} value={job.waybillNumber}>
+                  After {job.waybillNumber} — {job.pickupLocationName}
+                </option>
+              ))}
+              <option value="bottom">Bottom of queue (after current jobs)</option>
+            </select>
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  setAssignModalWaybill(null);
+                  setAssignDraft(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button type="button" className="btn-primary" onClick={() => void handleConfirmAssignment()}>
+                Confirm Assignment
               </button>
             </div>
           </div>
