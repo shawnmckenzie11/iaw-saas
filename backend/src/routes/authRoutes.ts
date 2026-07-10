@@ -131,17 +131,37 @@ const handleDispatcherLogin = async (req: Request, res: Response) => {
     return;
   }
 
+  const attempt = failedAttempts.get(normalizedEmail);
+  if (attempt && attempt.lockedUntil > Date.now()) {
+    res.status(423).json({ error: 'Account locked. Try again later.' });
+    return;
+  }
+
   const dispatcher = await prisma.dispatcher.findUnique({ where: { email: normalizedEmail } });
   if (!dispatcher || !dispatcher.isActive) {
+    const count = (attempt ? attempt.count : 0) + 1;
+    let lockedUntil = 0;
+    if (count >= 5) {
+      lockedUntil = Date.now() + 60 * 1000;
+    }
+    failedAttempts.set(normalizedEmail, { count, lockedUntil });
     res.status(401).json({ error: 'Invalid credentials' });
     return;
   }
 
   const valid = await bcrypt.compare(password, dispatcher.passwordHash);
   if (!valid) {
+    const count = (attempt ? attempt.count : 0) + 1;
+    let lockedUntil = 0;
+    if (count >= 5) {
+      lockedUntil = Date.now() + 60 * 1000;
+    }
+    failedAttempts.set(normalizedEmail, { count, lockedUntil });
     res.status(401).json({ error: 'Invalid credentials' });
     return;
   }
+
+  failedAttempts.delete(normalizedEmail);
 
   const token = signToken({
     sub: dispatcher.id,

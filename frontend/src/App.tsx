@@ -170,7 +170,7 @@ export default function App() {
     );
   }
 
-  if (screen === 'accounting') {
+  if (screen === 'accounting' && session.role === 'DISPATCHER') {
     return (
       <AccountingPage
         session={session}
@@ -203,6 +203,7 @@ export default function App() {
         setScreen('signoff');
       }}
       onOpenAccounting={() => {
+        if (session.role !== 'DISPATCHER') return;
         const cached = sessionStorage.getItem('iaw_waybills');
         if (cached) {
           try {

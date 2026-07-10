@@ -30,7 +30,7 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
     take: 500,
   });
 
-  res.json(records.map(serializeWaybill));
+  res.json(records.map((record) => serializeWaybill(record, { role: req.auth!.role })));
 });
 
 /** Manual driver waybill numbers use K-##### and must be unique among K- prefixed records. */
@@ -66,7 +66,7 @@ router.get('/:waybillNumber', requireAuth, checkWaybillAccess, async (req: Reque
     return;
   }
 
-  res.json(serializeWaybill(record));
+  res.json(serializeWaybill(record, { role: req.auth!.role }));
 });
 
 /**

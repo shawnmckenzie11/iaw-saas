@@ -17,8 +17,37 @@ declare global {
   }
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || 'iaw-dev-jwt-secret';
+const DEV_JWT_FALLBACK = 'iaw-dev-jwt-secret';
+
+/**
+ * Resolves the JWT signing secret, failing closed in production when unset.
+ */
+function resolveJwtSecret(): string {
+  const fromEnv = process.env.JWT_SECRET?.trim();
+  if (fromEnv) return fromEnv;
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('[Auth] JWT_SECRET is required in production');
+  }
+
+  return DEV_JWT_FALLBACK;
+}
+
+const JWT_SECRET = resolveJwtSecret();
 const JWT_EXPIRY = '12h';
+
+/**
+ * Returns true when a driver may mutate the given waybill record.
+ * Unassigned waybills (`driverId === null`) are mutable by any authenticated driver.
+ */
+export function canDriverMutateWaybill(
+  record: { driverId: string | null } | null | undefined,
+  driverId: string | undefined
+): boolean {
+  if (!record) return false;
+  if (!driverId) return false;
+  return record.driverId === null || record.driverId === driverId;
+}
 
 /**
  * Signs a JWT for an authenticated user with role-scoped claims.
@@ -107,7 +136,7 @@ export async function checkWaybillAccess(req: Request, res: Response, next: Next
       return;
     }
 
-    if (record.driverId !== null && record.driverId !== user.driverId) {
+    if (!canDriverMutateWaybill(record, user.driverId)) {
       res.status(403).json({ error: 'Forbidden' });
       return;
     }
@@ -115,6 +144,39 @@ export async function checkWaybillAccess(req: Request, res: Response, next: Next
     next();
   } catch (error) {
     res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+/**
+ * Authenticates a request from Bearer JWT or the `iaw_auth_session` cookie
+ * (used by same-origin `<img src="/uploads/...">` loads).
+ */
+export function authenticateTokenOrCookie(req: Request, res: Response, next: NextFunction): void {
+  const header = req.headers.authorization;
+  if (header?.startsWith('Bearer ')) {
+    authenticateToken(req, res, next);
+    return;
+  }
+
+  const rawCookie = req.headers.cookie ?? '';
+  const match = rawCookie.match(/(?:^|;\s*)iaw_auth_session=([^;]*)/);
+  if (!match) {
+    res.status(401).json({ error: 'Authorization required' });
+    return;
+  }
+
+  try {
+    const session = JSON.parse(decodeURIComponent(match[1])) as { token?: string };
+    if (!session.token || revokedTokens.has(session.token)) {
+      res.status(401).json({ error: 'Invalid or expired token' });
+      return;
+    }
+    const decoded = jwt.verify(session.token, JWT_SECRET) as AuthPayload;
+    req.user = decoded;
+    req.auth = decoded;
+    next();
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired token' });
   }
 }
 

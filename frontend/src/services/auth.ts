@@ -31,7 +31,8 @@ function getCookie(name: string): string | null {
  * Writes a cookie that survives offline page reloads.
  */
 function setCookie(name: string, value: string): void {
-  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; SameSite=Lax; max-age=43200`;
+  const secure = typeof location !== 'undefined' && location.protocol === 'https:' ? '; Secure' : '';
+  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; SameSite=Lax; max-age=43200${secure}`;
 }
 
 /**

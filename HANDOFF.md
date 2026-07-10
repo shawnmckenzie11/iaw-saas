@@ -236,6 +236,27 @@ Re-run `cd backend && npx ts-node src/seed.ts` against archive CSV to regenerate
 
 ---
 
+## 13. Safety Audit Remediation (2026-07-10)
+
+### Completed
+- **P1 Sync RBAC:** `canDriverMutateWaybill`; sync events/blobs reject cross-driver mutations; driver pricing stripped on sync ingest
+- **P2 Uploads auth:** `GET /uploads/:filename` requires Bearer JWT or session cookie; drivers scoped to accessible waybills; `<img src="/uploads/...">` unchanged
+- **P3 Driver pricing:** `serializeWaybill(record, { role })` omits `calculatedPrice` / `pricingTotalCost` for drivers
+- **Signature hash:** `computeSignatureHash` over **image bytes** + `clientSideUuid` + `deliveredAt` + `signatureName` + `driverId`; stored on blob upload; URL storage/retrieval unchanged
+- **P5 partial:** JWT fail-closed in production; CORS via `PUBLIC_APP_URL`; dispatcher lockout; HTTPS `Secure` cookie flag; accounting App route guard
+
+### Still open
+- P4 git-history purge (ops approval required)
+- HttpOnly cookies, shared revocation store, PIN pepper/bcrypt
+
+### Verification
+| Test Category | Status | Command |
+|---|---|---|
+| Signature hash + sync RBAC + serialize | **PASS** | `cd backend && npm test -- --testPathPattern='signatureHash|syncRoutes|eventProjector'` |
+| Docs | Updated | `docs/SAFETY_AUDIT.md`, `README.md` |
+
+---
+
 ## 11. Payroll Driver Names + Dispatcher Pickup Flow (2026-07-02 — local, uncommitted)
 
 ### Payroll-linked driver login usernames

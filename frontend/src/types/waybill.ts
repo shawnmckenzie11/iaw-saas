@@ -30,6 +30,8 @@ export interface Waybill {
   deliveredAt?: string | null;
   signatureName?: string;
   signatureImageUrl?: string;
+  /** SHA-256 tamper hash of signature image bytes + delivery metadata. */
+  signatureHash?: string | null;
   proofPhotoUrl?: string;
   signedAt?: string | null;
 }

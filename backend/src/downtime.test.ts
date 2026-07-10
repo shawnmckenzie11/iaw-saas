@@ -23,13 +23,9 @@ describe('GET /health - Database Downtime Robustness', () => {
 
     const res = await request(app).get('/health');
 
-    // Confirm that the server did not crash, responded with 500, and returned error status
+    // Confirm that the server did not crash and returned a generic error (no DB detail leak)
     expect(res.status).toBe(500);
-    expect(res.body).toHaveProperty('status', 'ERROR');
-    expect(res.body).toHaveProperty('message');
-    
-    // Ensure the message has database error information
-    expect(res.body.message).toMatch(/(connection|database|auth|prisma)/i);
+    expect(res.body).toEqual({ status: 'ERROR', database: 'DISCONNECTED' });
 
     await prisma.$disconnect();
   }, 30000); // 30s timeout to allow Prisma connection attempt to fail

@@ -2,14 +2,15 @@ import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { requireAuth } from '../middleware/auth';
+import { canDriverMutateWaybill, requireAuth } from '../middleware/auth';
 import { syncEventsBatch } from '../services/waybillService';
 import { prisma } from '../config/db';
+import { computeSignatureHash } from '../utils/signatureHash';
 
 const router = Router();
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
 });
 
 const UPLOAD_DIR = path.join(process.cwd(), 'uploads');
@@ -52,6 +53,7 @@ router.post('/events', requireAuth, async (req: Request, res: Response) => {
 
 /**
  * POST /api/sync/blobs — Accepts signature/photo binary uploads.
+ * Signature uploads also persist a SHA-256 tamper hash over image bytes + metadata.
  */
 router.post(
   '/blobs',
@@ -85,13 +87,14 @@ router.post(
     const user = req.user || req.auth;
     const record = await prisma.deliveryRecord.findUnique({ where: { waybillNumber } });
 
-    if (user?.role === 'DRIVER') {
-      if (record) {
-        if (!(record.driverId === null || record.driverId === user.driverId)) {
-          res.status(403).json({ error: 'Forbidden' });
-          return;
-        }
-      }
+    if (!record) {
+      res.status(404).json({ error: 'Waybill not found' });
+      return;
+    }
+
+    if (user?.role === 'DRIVER' && !canDriverMutateWaybill(record, user.driverId)) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
     }
 
     ensureUploadDir();
@@ -102,12 +105,24 @@ router.post(
 
     const fileUri = `/uploads/${filename}`;
 
-    if (record && fileType === 'signature') {
+    if (fileType === 'signature') {
+      const signatureHash = computeSignatureHash({
+        imageBytes: req.file.buffer,
+        clientSideUuid: record.clientSideUuid,
+        deliveredAt: record.deliveredAt,
+        signatureName: record.signatureName,
+        driverId: record.driverId,
+      });
+
       await prisma.deliveryRecord.update({
         where: { waybillNumber },
-        data: { signatureImageUrl: fileUri },
+        data: {
+          signatureImageUrl: fileUri,
+          signatureHash,
+          signedAt: record.signedAt ?? new Date(),
+        },
       });
-    } else if (record && fileType === 'photo') {
+    } else if (fileType === 'photo') {
       await prisma.deliveryRecord.update({
         where: { waybillNumber },
         data: { proofPhotoUrl: fileUri },

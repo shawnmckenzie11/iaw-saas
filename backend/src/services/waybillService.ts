@@ -237,6 +237,11 @@ export async function syncEventsBatch(
         (err as Error & { statusCode: number }).statusCode = 403;
         throw err;
       }
+
+      if (evt.data) {
+        delete evt.data.calculatedPrice;
+        delete evt.data.pricingTotalCost;
+      }
     }
 
     let record = await prisma.deliveryRecord.findUnique({
@@ -281,9 +286,18 @@ export async function syncEventsBatch(
           typeof evt.data?.parcelWeightClass === 'string' ? evt.data.parcelWeightClass : undefined,
         priority: typeof evt.data?.priority === 'string' ? evt.data.priority : undefined,
         vehicleType: typeof evt.data?.vehicleType === 'string' ? evt.data.vehicleType : undefined,
-        driverId: typeof evt.data?.driverId === 'string' ? evt.data.driverId : null,
+        driverId:
+          typeof evt.data?.driverId === 'string'
+            ? evt.data.driverId
+            : user?.role === 'DRIVER'
+              ? user.driverId ?? null
+              : null,
         pricingTotalCost:
-          typeof evt.data?.calculatedPrice === 'number' ? evt.data.calculatedPrice : undefined,
+          user?.role === 'DRIVER'
+            ? undefined
+            : typeof evt.data?.calculatedPrice === 'number'
+              ? evt.data.calculatedPrice
+              : undefined,
       });
       syncedIds.push(evt.id);
       continue;

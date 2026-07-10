@@ -222,11 +222,53 @@ export function projectEventOntoRecord(
   return update;
 }
 
+/** Options for role-aware waybill API serialization. */
+export interface SerializeWaybillOptions {
+  /** When `DRIVER`, omits financial pricing fields from the response. */
+  role?: 'DRIVER' | 'DISPATCHER';
+}
+
+/** API waybill payload returned to clients. */
+export type SerializedWaybill = {
+  id: string;
+  clientSideUuid: string;
+  waybillNumber: string;
+  status: DeliveryRecord['status'];
+  syncStatus: DeliveryRecord['syncStatus'];
+  driverId: string | null;
+  vehicleType: DeliveryRecord['vehicleType'];
+  parcelDescription: string;
+  parcelQuantity: number;
+  pickupLocationName: string;
+  pickupAddress: string | null;
+  dropoffDestinationName: string;
+  dropoffAddress: string | null;
+  priority: string;
+  driverQueueRank: number | null;
+  createdAt: string;
+  capturedAt: string;
+  deliveredAt: string | null;
+  signatureName: string | null;
+  signatureImageUrl: string | null;
+  signatureHash: string | null;
+  proofPhotoUrl: string | null;
+  signedAt: string | null;
+  additionalComments: string | null;
+  podRequired: boolean;
+  externalSource: string | null;
+  calculatedPrice?: number;
+  pricingTotalCost?: number;
+};
+
 /**
  * Serializes a delivery record for API responses using camelCase field names.
+ * Drivers receive the same operational fields but without pricing totals.
  */
-export function serializeWaybill(record: DeliveryRecord) {
-  return {
+export function serializeWaybill(
+  record: DeliveryRecord,
+  options: SerializeWaybillOptions = {}
+): SerializedWaybill {
+  const base: SerializedWaybill = {
     id: record.id,
     clientSideUuid: record.clientSideUuid,
     waybillNumber: record.waybillNumber,
@@ -247,11 +289,20 @@ export function serializeWaybill(record: DeliveryRecord) {
     deliveredAt: record.deliveredAt?.toISOString() ?? null,
     signatureName: record.signatureName,
     signatureImageUrl: record.signatureImageUrl,
+    signatureHash: record.signatureHash,
     proofPhotoUrl: record.proofPhotoUrl,
     signedAt: record.signedAt?.toISOString() ?? null,
     additionalComments: record.additionalComments,
     podRequired: record.additionalComments === '__podRequired',
     externalSource: record.externalSource,
+  };
+
+  if (options.role === 'DRIVER') {
+    return base;
+  }
+
+  return {
+    ...base,
     calculatedPrice: Number(record.pricingTotalCost),
     pricingTotalCost: Number(record.pricingTotalCost),
   };

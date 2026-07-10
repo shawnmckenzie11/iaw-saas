@@ -21,7 +21,7 @@ graph TD
 ### Key Architectural Pillars
 
 1. **Offline-first PWA**: Lightweight events and heavy blobs sync on separate queues with visible pending counters.
-2. **Cryptographic signature integrity**: Signature vectors are hashed with waybill metadata for tamper evidence (post-MVP hardening).
+2. **Cryptographic signature integrity**: Signature image bytes are hashed with waybill metadata (`clientSideUuid`, `deliveredAt`, `signatureName`, `driverId`) into `signatureHash` for tamper evidence. Images remain stored at `/uploads` and returned on waybill records as before.
 3. **Append-only event sourcing**: Clients never mutate read tables directly; the server replays `waybill_events` into materialized state.
 4. **Database-driven rates**: Flat rates and category rules in PostgreSQL drive pricing (see `frontend/src/utils/pricing.ts` and `backend/src/utils/pricing.ts`).
 5. **Dual auth + RBAC**: Drivers sign in with **username + 4-digit PIN**; dispatchers sign in with **email + password** on a separate tab. JWTs gate every API route.
